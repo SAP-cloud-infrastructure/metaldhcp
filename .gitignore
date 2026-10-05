@@ -1,0 +1,25 @@
+# Binaries for programs and plugins
+bin/*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.DS_Store
+.claude
+*.out
+
+# Test binary, built with `go test -c`
+*.test
+
+# Go workspace file
+go.work
+
+# editor and IDE paraphernalia
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.idea/
+.cache
