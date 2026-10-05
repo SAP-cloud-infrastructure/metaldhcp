@@ -1,0 +1,9 @@
+# Binaries
+/metaldhcp
+/bin/
+
+# Test / coverage output
+cover.out
+
+# Local envtest assets
+/testbin/

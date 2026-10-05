@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: metaldhcp
+nodes:
+  - role: control-plane
