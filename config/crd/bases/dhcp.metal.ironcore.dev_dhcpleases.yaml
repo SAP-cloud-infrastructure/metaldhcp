@@ -24,6 +24,10 @@ spec:
     - jsonPath: .spec.gateway
       name: Gateway
       type: string
+    - jsonPath: .spec.clientID
+      name: ClientID
+      priority: 1
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
