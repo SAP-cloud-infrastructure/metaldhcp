@@ -17,6 +17,7 @@ import (
 // +kubebuilder:printcolumn:name="MAC",type=string,JSONPath=`.spec.macAddress`
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.spec.ip`
 // +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`
+// +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.macAddress`
 // +kubebuilder:selectablefield:JSONPath=`.spec.ip`
 type DHCPLease struct {
