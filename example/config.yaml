@@ -1,0 +1,18 @@
+server4:
+    listen:
+    - "0.0.0.0:67"
+
+    plugins:
+        # mandatory for RFC compliance
+        - server_id: 0.0.0.0
+        # set default lease time
+        - lease_time: 3600s
+        # announce subnet mask from the server's interface
+        - netmask:
+        # announce default gateway
+        - router:
+        # announce DNS servers
+        - dns: 8.8.8.8 8.8.4.4
+        # oob allocates an IPv4 address (sets YourIPAddr) from config-defined or OOBSubnet CR pools
+        # and writes a DHCPLease CR recording the binding
+        - oob: oob.yaml

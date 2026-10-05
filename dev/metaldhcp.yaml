@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metaldhcp-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metaldhcp
+  namespace: metaldhcp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: metaldhcp
+rules:
+  - apiGroups: ["dhcp.metal.ironcore.dev"]
+    resources: ["oobsubnets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["dhcp.metal.ironcore.dev"]
+    resources: ["dhcpleases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metaldhcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: metaldhcp
+subjects:
+  - kind: ServiceAccount
+    name: metaldhcp
+    namespace: metaldhcp-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metaldhcp-config
+  namespace: metaldhcp-system
+data:
+  config.yaml: |
+    server4:
+      listen:
+        - "0.0.0.0:67"
+      plugins:
+        - lease_time: 1h
+        - server_id: 192.168.100.1
+        - netmask: 255.255.255.0
+        - oob: /etc/metaldhcp/oob.yaml
+  oob.yaml: |
+    namespace: metaldhcp-system
+    subnets:
+      - cidr: 192.168.100.0/24
+        gateway: 192.168.100.1
+        rangeStart: 192.168.100.10
+        rangeEnd: 192.168.100.100
+        leaseTime: 1h
+      - cidr: 10.0.2.0/24
+        gateway: 10.0.2.1
+        rangeStart: 10.0.2.10
+        rangeEnd: 10.0.2.100
+        leaseTime: 1h
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metaldhcp
+  namespace: metaldhcp-system
+  labels:
+    app: metaldhcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metaldhcp
+  template:
+    metadata:
+      labels:
+        app: metaldhcp
+    spec:
+      serviceAccountName: metaldhcp
+      containers:
+        - name: metaldhcp
+          image: localhost:5001/metaldhcp
+          args:
+            - "-config"
+            - "/etc/metaldhcp/config.yaml"
+            - "-loglevel"
+            - "debug"
+          # Dev-only: run as root with NET_RAW/NET_BIND_SERVICE so coredhcp can
+          # bind :67 and open a packet socket without fuss.
+          securityContext:
+            runAsUser: 0
+            capabilities:
+              add: ["NET_BIND_SERVICE", "NET_RAW"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/metaldhcp
+              readOnly: true
+        # debug sidecar: shares the pod network namespace.
+        # Creates a veth pair: veth0-server (server side, 192.168.100.1/24) +
+        # veth0 (client side). Broadcasts on veth0 traverse the pair and
+        # arrive at veth0-server, so coredhcp can send Ethernet replies back.
+        # Usage: kubectl exec -it -n metaldhcp-system deploy/metaldhcp -c debug -- bash
+        #        udhcpc -i veth0 -n -q
+        - name: debug
+          image: nicolaka/netshoot
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ip link add veth0-server type veth peer name veth0
+              ip addr add 192.168.100.1/24 dev veth0-server
+              ip link set veth0-server up
+              ip link set veth0 up
+              echo "veth pair ready"
+              sleep infinity
+          securityContext:
+            capabilities:
+              add: ["NET_RAW", "NET_ADMIN"]
+      volumes:
+        - name: config
+          configMap:
+            name: metaldhcp-config

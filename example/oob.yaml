@@ -1,0 +1,17 @@
+# Namespace where DHCPLease objects are written and OOBSubnet CRs are read from.
+namespace: metaldhcp-system
+
+# subnetLabels selects OOBSubnet CRs to use as address pools.
+# Ignored when subnets is non-empty (see below).
+subnetLabels:
+  - key: dhcp
+    value: "true"
+
+# subnets defines pools inline (e.g. set via Helm values / deployment pipeline).
+# When non-empty, subnets take precedence and OOBSubnet CRs are not consulted.
+subnets:
+  - cidr: 192.168.10.0/24
+    gateway: 192.168.10.1
+    rangeStart: 192.168.10.100
+    rangeEnd: 192.168.10.200
+    leaseTime: 24h

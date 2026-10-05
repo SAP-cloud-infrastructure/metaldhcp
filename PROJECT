@@ -1,0 +1,23 @@
+domain: metal.ironcore.dev
+layout:
+- go.kubebuilder.io/v4
+projectName: metaldhcp
+repo: github.com/SAP-cloud-infrastructure/metaldhcp
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: metal.ironcore.dev
+  group: dhcp
+  kind: OOBSubnet
+  path: github.com/SAP-cloud-infrastructure/metaldhcp/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: metal.ironcore.dev
+  group: dhcp
+  kind: DHCPLease
+  path: github.com/SAP-cloud-infrastructure/metaldhcp/api/v1alpha1
+  version: v1alpha1
+version: "3"
