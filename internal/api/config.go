@@ -16,6 +16,7 @@ type Subnet struct {
 	RangeStart string `yaml:"rangeStart"`
 	RangeEnd   string `yaml:"rangeEnd"`
 	LeaseTime  string `yaml:"leaseTime"`
+	BootURL    string `yaml:"bootURL"`
 }
 
 type OOBConfig struct {

@@ -139,13 +139,16 @@ func handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 
 	log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t, relay %t)",
 		mac, poolHint, allocHint, exactIP, giaddr != nil && !giaddr.IsUnspecified())
-	leaseIP, gateway, err := k8sClient.getIP(ctx, poolHint, mac, allocHint, exactIP)
+	leaseIP, gateway, bootURL, err := k8sClient.getIP(ctx, poolHint, mac, allocHint, exactIP)
 	if err != nil {
 		log.Errorf("Could not allocate IP: %s", err)
 		return nil, true
 	}
 
 	resp.YourIPAddr = leaseIP
+	if bootURL != "" {
+		resp.BootFileName = bootURL
+	}
 
 	if err := k8sClient.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), resp.IPAddressLeaseTime(0)); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)

@@ -51,6 +51,7 @@ func configPools(subnets []api.Subnet) []allocator.Pool {
 			Gateway:    s.Gateway,
 			RangeStart: s.RangeStart,
 			RangeEnd:   s.RangeEnd,
+			BootURL:    s.BootURL,
 		})
 	}
 	return pools
@@ -84,17 +85,17 @@ func (k *K8sClient) seedFromLeases(ctx context.Context) error {
 // requested + exactIP come from the client's own address hints (clientIP / requestedIP)
 // and are decoupled from poolHint so that relayed packets can use giaddr for pool
 // selection while still honoring the client's existing lease.
-func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.HardwareAddr, requested net.IP, exactIP bool) (net.IP, string, error) {
+func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.HardwareAddr, requested net.IP, exactIP bool) (net.IP, string, string, error) {
 	pool, err := k.selectPool(ctx, poolHint)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	leaseIP, err := k.alloc.Allocate(*pool, helper.NormalizeMAC(mac), requested, exactIP)
 	if err != nil {
-		return nil, "", fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)
+		return nil, "", "", fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)
 	}
-	return leaseIP, pool.Gateway, nil
+	return leaseIP, pool.Gateway, pool.BootURL, nil
 }
 
 // selectPool returns the pool whose CIDR contains ipaddr, drawing from config-defined pools when
@@ -146,6 +147,7 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			Gateway:    s.Spec.Gateway,
 			RangeStart: s.Spec.RangeStart,
 			RangeEnd:   s.Spec.RangeEnd,
+			BootURL:    s.Spec.BootURL,
 		})
 	}
 	return pools, nil

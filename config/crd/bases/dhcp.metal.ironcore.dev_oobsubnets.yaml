@@ -50,6 +50,11 @@ spec:
             type: object
           spec:
             properties:
+              bootURL:
+                description: |-
+                  BootURL, when set, is sent as the DHCP boot file URL (BootFileName field) in
+                  the offer/ack. Used for per-pool UEFI HTTP boot or iPXE chain-loading.
+                type: string
               cidr:
                 description: CIDR is the IPv4 network from which addresses are allocated,
                   e.g. "10.0.1.0/24".
