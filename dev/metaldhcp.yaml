@@ -59,11 +59,13 @@ data:
         rangeStart: 192.168.100.10
         rangeEnd: 192.168.100.100
         leaseTime: 1h
+        # bootURL: https://boot-operator.example.com/boot
       - cidr: 10.0.2.0/24
         gateway: 10.0.2.1
         rangeStart: 10.0.2.10
         rangeEnd: 10.0.2.100
         leaseTime: 1h
+        # bootURL: https://boot-operator-remote.example.com/boot
 ---
 apiVersion: apps/v1
 kind: Deployment

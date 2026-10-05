@@ -47,6 +47,7 @@ type Pool struct {
 	Gateway    string // optional, excluded from allocation
 	RangeStart string // optional lower bound (inclusive)
 	RangeEnd   string // optional upper bound (inclusive)
+	BootURL    string // optional UEFI HTTP boot URL sent as DHCP BootFileName
 }
 
 // Allocate returns the IPv4 address for macKey within pool. It returns the MAC's

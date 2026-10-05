@@ -15,3 +15,4 @@ subnets:
     rangeStart: 192.168.10.100
     rangeEnd: 192.168.10.200
     leaseTime: 24h
+    # bootURL: https://boot-operator.example.com/boot  # UEFI HTTP boot / iPXE chain URL

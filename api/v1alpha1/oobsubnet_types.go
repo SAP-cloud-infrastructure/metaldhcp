@@ -38,6 +38,10 @@ type OOBSubnetSpec struct {
 	// (inclusive). When unset the whole usable host range is used.
 	RangeStart string `json:"rangeStart,omitempty"`
 	RangeEnd   string `json:"rangeEnd,omitempty"`
+
+	// BootURL, when set, is sent as the DHCP boot file URL (BootFileName field) in
+	// the offer/ack. Used for per-pool UEFI HTTP boot or iPXE chain-loading.
+	BootURL string `json:"bootURL,omitempty"`
 }
 
 // +kubebuilder:object:root=true

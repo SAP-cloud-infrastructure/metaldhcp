@@ -15,10 +15,10 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
-	"gopkg.in/yaml.v3"
 )
 
 const testMAC = "aa:bb:cc:dd:ee:01"
@@ -235,5 +235,45 @@ var _ = Describe("OOB plugin handler4", func() {
 		out, drop := handler4(req, resp)
 		Expect(out).To(BeNil())
 		Expect(drop).To(BeTrue())
+	})
+
+	It("sets BootFileName from pool bootURL when present", func(ctx SpecContext) {
+		ns := newNamespace(ctx)
+		const (
+			cidr    = "10.1.1.0/24"
+			bootURL = "https://boot-operator.example.com/boot"
+		)
+
+		buildPlugin(api.OOBConfig{
+			Namespace: ns.Name,
+			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL}},
+		})
+
+		mac, err := net.ParseMAC(testMAC)
+		Expect(err).NotTo(HaveOccurred())
+		req, resp := discover(mac, net.ParseIP("10.1.1.1"))
+
+		out, drop := handler4(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		Expect(out.BootFileName).To(Equal(bootURL))
+	})
+
+	It("leaves BootFileName empty when pool has no bootURL", func(ctx SpecContext) {
+		ns := newNamespace(ctx)
+
+		buildPlugin(api.OOBConfig{
+			Namespace: ns.Name,
+			Subnets:   []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1"}},
+		})
+
+		mac, err := net.ParseMAC(testMAC)
+		Expect(err).NotTo(HaveOccurred())
+		req, resp := discover(mac, net.ParseIP("10.2.2.1"))
+
+		out, drop := handler4(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		Expect(out.BootFileName).To(BeEmpty())
 	})
 })
