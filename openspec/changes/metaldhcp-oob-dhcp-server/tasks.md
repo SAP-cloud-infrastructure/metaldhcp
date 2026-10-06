@@ -39,11 +39,11 @@
 
 ## 8. Per-pool boot URL (PXE / UEFI HTTP boot)
 
-- [ ] 8.1 Add `BootURL string` field to `internal/api/config.go` `Subnet` struct and `internal/allocator/allocator.go` `Pool` struct; propagate through `configPools` and `oobSubnetPools` in `plugins/oob/k8s.go`
-- [ ] 8.2 Return `BootURL` from `getIP` alongside gateway (or return the resolved `Pool`); in `handler4` set `resp.BootFileName = pool.BootURL` when non-empty; verify the envtest suite still passes
-- [ ] 8.3 Add `BootURL string` field to `OOBSubnet` spec and regenerate CRD manifest; verify `make manifests` is clean
-- [ ] 8.4 Add envtest case: pool with `BootURL` set → response `BootFileName` matches; pool without → `BootFileName` empty
-- [ ] 8.5 Update `example/oob.yaml` and `dev/metaldhcp.yaml` with a commented-out `bootURL` example
+- [x] 8.1 Add `BootURL string` field to `internal/api/config.go` `Subnet` struct and `internal/allocator/allocator.go` `Pool` struct; propagate through `configPools` and `oobSubnetPools` in `plugins/oob/k8s.go`
+- [x] 8.2 Return `BootURL` from `getIP` alongside gateway (or return the resolved `Pool`); in `handler4` set `resp.BootFileName = pool.BootURL` when non-empty; verify the envtest suite still passes
+- [x] 8.3 Add `BootURL string` field to `OOBSubnet` spec and regenerate CRD manifest; verify `make manifests` is clean
+- [x] 8.4 Add envtest case: pool with `BootURL` set → response `BootFileName` matches; pool without → `BootFileName` empty
+- [x] 8.5 Update `example/oob.yaml` and `dev/metaldhcp.yaml` with a commented-out `bootURL` example
 
 ## 9. Static leases
 
@@ -55,7 +55,7 @@
 
 ## 10. CI
 
-- [ ] 10.1 Add a CI pipeline (GitHub Actions or equivalent) that runs `make generate manifests` and fails if there are uncommitted changes, then runs `make test`; verify CI passes on a Linux runner with `ENVTEST_K8S_VERSION=1.30.0`
+- [x] 10.1 Add a CI pipeline (GitHub Actions or equivalent) that runs `make generate manifests` and fails if there are uncommitted changes, then runs `make test`; verify CI passes on a Linux runner with `ENVTEST_K8S_VERSION=1.30.0`
 
 ## 11. README
 
