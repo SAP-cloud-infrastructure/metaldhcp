@@ -35,6 +35,10 @@ jobs:
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ok-to-charts')) ||
       (github.event_name == 'release' && github.event.action == 'published')
     steps:
+      - name: Lowercase repository owner
+        id: owner
+        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -75,4 +79,4 @@ jobs:
 
       - name: Push Helm chart to GHCR
         run: |
-          helm push metaldhcp-${{ steps.chart_version.outputs.version }}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+          helm push metaldhcp-${{ steps.chart_version.outputs.version }}.tgz oci://ghcr.io/${{ steps.owner.outputs.value }}/charts

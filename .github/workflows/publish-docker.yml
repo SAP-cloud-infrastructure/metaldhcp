@@ -37,6 +37,9 @@ jobs:
       (github.event_name == 'release' && github.event.action == 'published')
     runs-on: ubuntu-latest
     steps:
+    - name: Lowercase repository owner
+      id: owner
+      run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
     - name: Check out repository
       uses: actions/checkout@v6
       with:
@@ -46,7 +49,7 @@ jobs:
       id: meta
       with:
         images: |
-          ghcr.io/${{ github.repository_owner }}/metaldhcp
+          ghcr.io/${{ steps.owner.outputs.value }}/metaldhcp
         tags: |
           type=semver,pattern={{version}}
           type=schedule
