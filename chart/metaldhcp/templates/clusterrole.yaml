@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "metaldhcp.fullname" . }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["dhcp.metal.ironcore.dev"]
+    resources: ["oobsubnets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["dhcp.metal.ironcore.dev"]
+    resources: ["dhcpleases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]

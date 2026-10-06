@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metaldhcp.fullname" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server4:
+      listen:
+        - {{ .Values.server.listenAddr | quote }}
+      plugins:
+        - lease_time: {{ .Values.server.leaseTime }}
+        - server_id: {{ .Values.server.serverID }}
+        - netmask:
+        - oob: /etc/metaldhcp/oob.yaml
+  oob.yaml: |
+    namespace: {{ .Values.oob.namespace }}
+    {{- with .Values.oob.subnetLabels }}
+    subnetLabels:
+      {{- range . }}
+      - key: {{ .key }}
+        value: {{ .value | quote }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.oob.subnets }}
+    subnets:
+      {{- range . }}
+      - cidr: {{ .cidr }}
+        gateway: {{ .gateway }}
+        rangeStart: {{ .rangeStart }}
+        rangeEnd: {{ .rangeEnd }}
+        leaseTime: {{ .leaseTime }}
+        {{- if .bootURL }}
+        bootURL: {{ .bootURL }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.oob.staticLeases }}
+    staticLeases:
+      {{- range . }}
+      - mac: {{ .mac | quote }}
+        ip: {{ .ip }}
+        {{- if .hostname }}
+        hostname: {{ .hostname }}
+        {{- end }}
+      {{- end }}
+    {{- end }}

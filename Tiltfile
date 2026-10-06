@@ -33,11 +33,14 @@ docker_build(
     ".",
     build_args={"TARGETARCH": arch, "TARGETOS": "linux"},
 )
-k8s_yaml("dev/metaldhcp.yaml")
+k8s_yaml(helm(
+    "./chart/metaldhcp",
+    values=["./dev/values.yaml"],
+))
 k8s_resource("metaldhcp", resource_deps=["crds"])
 local_resource(
     "metaldhcp-config-reload",
     cmd="kubectl rollout restart deployment/metaldhcp -n metaldhcp-system",
-    deps=["dev/metaldhcp.yaml"],
+    deps=["dev/values.yaml", "chart/metaldhcp/templates/configmap.yaml"],
     resource_deps=["metaldhcp"],
 )

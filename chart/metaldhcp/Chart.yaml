@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+apiVersion: v2
+name: metaldhcp
+description: Kubernetes-native DHCP server for bare-metal out-of-band networks
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

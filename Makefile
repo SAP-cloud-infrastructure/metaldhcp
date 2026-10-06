@@ -72,6 +72,13 @@ endif
 
 ##@ Dev environment
 
+.PHONY: chart-lint
+chart-lint: ## Lint and render the Helm chart.
+	helm lint ./chart/metaldhcp
+	helm lint ./chart/metaldhcp -f dev/values.yaml
+	helm template metaldhcp ./chart/metaldhcp > /dev/null
+	helm template metaldhcp ./chart/metaldhcp -f dev/values.yaml > /dev/null
+
 KIND_CLUSTER_NAME ?= metaldhcp
 KIND_REGISTRY_PORT ?= 5001
 

@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+
+image:
+  repository: ghcr.io/sap-cloud-infrastructure/metaldhcp
+  tag: ""  # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+# Namespace where metaldhcp runs and where DHCPLease objects are written.
+namespace: metaldhcp-system
+
+# createNamespace controls whether the Namespace resource is included in the chart.
+# Set to false when the namespace is managed externally.
+createNamespace: true
+
+server:
+  listenAddr: "0.0.0.0:67"
+  leaseTime: 3600s
+  serverID: "0.0.0.0"
+  logLevel: info
+
+# oob plugin configuration — maps directly to the oob.yaml config file.
+oob:
+  # Namespace where DHCPLease CRs are written and OOBSubnet CRs are read from.
+  namespace: metaldhcp-system
+
+  # subnetLabels selects OOBSubnet CRs as pools. Ignored when subnets is non-empty.
+  subnetLabels: []
+  # - key: dhcp
+  #   value: "true"
+
+  # subnets defines pools inline. When non-empty, takes precedence over OOBSubnet CRs.
+  subnets: []
+  # - cidr: 192.168.10.0/24
+  #   gateway: 192.168.10.1
+  #   rangeStart: 192.168.10.100
+  #   rangeEnd: 192.168.10.200
+  #   leaseTime: 24h
+  #   bootURL: https://boot-operator.example.com/boot
+
+  # staticLeases pins specific MACs to fixed IPs, bypassing pool allocation.
+  staticLeases: []
+  # - mac: "aa:bb:cc:dd:ee:ff"
+  #   ip: 192.168.10.200
+  #   hostname: bmc-static-01
+
+securityContext:
+  capabilities:
+    add:
+      - NET_BIND_SERVICE
+      - NET_RAW
+
+# debug adds a netshoot sidecar that creates a veth pair for local DHCP testing.
+# Enable in dev environments only; not suitable for production.
+debug:
+  enabled: false
+  image: nicolaka/netshoot
+  serverIP: 192.168.100.1
+  serverCIDR: /24
