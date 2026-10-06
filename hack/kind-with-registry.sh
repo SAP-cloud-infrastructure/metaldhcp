@@ -13,14 +13,22 @@ KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-metaldhcp}"
 KIND_REGISTRY_PORT="${KIND_REGISTRY_PORT:-5001}"
 reg_name='kind-registry-metaldhcp'
 
+cluster_exists=false
 if [[ "$(kind get clusters)" =~ .*"${KIND_CLUSTER_NAME}".* ]]; then
   echo "cluster '${KIND_CLUSTER_NAME}' already exists, skipping create"
-  exit 0
+  cluster_exists=true
 fi
 
 running="$(docker inspect -f '{{.State.Running}}' "${reg_name}" 2>/dev/null || true)"
 if [ "${running}" != 'true' ]; then
   docker run -d --restart=always -p "127.0.0.1:${KIND_REGISTRY_PORT}:5000" --name "${reg_name}" registry:2
+fi
+
+if [ "${cluster_exists}" = 'true' ]; then
+  if [ "$(docker inspect -f='{{json .NetworkSettings.Networks.kind}}' "${reg_name}")" = 'null' ]; then
+    docker network connect "kind" "${reg_name}"
+  fi
+  exit 0
 fi
 
 cat <<EOF | kind create cluster --name "${KIND_CLUSTER_NAME}" --config=-

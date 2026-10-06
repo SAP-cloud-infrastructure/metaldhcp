@@ -59,4 +59,24 @@
 
 ## 11. README
 
-- [ ] 11.1 Write `README.md` covering: component boundary (metaldhcp = DHCP layer only; moo watches DHCPLease downstream), pool sources (config vs. OOBSubnet CRs, precedence), `example/config.yaml` and `example/oob.yaml` walkthrough, `make tilt-up` dev environment, macOS build caveat; verify all commands documented in the README run as written
+- [x] 11.1 Write `README.md` covering: component boundary (metaldhcp = DHCP layer only; moo watches DHCPLease downstream), pool sources (config vs. OOBSubnet CRs, precedence), `example/config.yaml` and `example/oob.yaml` walkthrough, `make tilt-up` dev environment, macOS build caveat; verify all commands documented in the README run as written
+
+## 12. Helm chart
+
+- [x] 12.1 Add a vanilla Helm chart to `chart/metaldhcp/` covering Namespace, ServiceAccount, ClusterRole + Binding, ConfigMap (`config.yaml` + `oob.yaml` templated from values), Deployment (image, args, capabilities, volume mount); verify `helm lint` passes
+- [x] 12.2 Parameterise essential values: `image.repository`, `image.tag`, `namespace`, `oob.namespace`, `oob.subnets`, `oob.staticLeases`; add `values.yaml` with safe defaults
+- [x] 12.3 Verify `helm template` renders a manifest equivalent to `dev/metaldhcp.yaml` for the dev configuration
+
+## 13. Prometheus metrics
+
+- [ ] 13.1 Expose a `/metrics` HTTP endpoint (port 8080) via `prometheus/client_golang`
+- [ ] 13.2 Add metrics: active lease count per pool (`metaldhcp_leases_active`), total allocations (`metaldhcp_allocations_total`), allocation errors (`metaldhcp_allocation_errors_total`), pool utilization ratio (`metaldhcp_pool_utilization_ratio`)
+- [ ] 13.3 Add a `ServiceMonitor` to the Helm chart (optional, gated by a values flag)
+- [ ] 13.4 Add unit tests for counter increments; verify the metrics endpoint responds in envtest
+
+## 14. DNS propagation
+
+- [ ] 14.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
+- [ ] 14.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
+- [ ] 14.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
+- [ ] 14.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed

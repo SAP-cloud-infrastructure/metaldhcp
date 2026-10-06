@@ -131,8 +131,8 @@ make kind-delete     # delete the kind cluster and registry
 
 - The exact `dhcping` flags vary by build; the goal is simply an IPv4 DISCOVER to `:67`. If
   `dhcping` isn't cooperative, any IPv4 DHCP DISCOVER against the pod works (e.g. `nmap --script
-broadcast-dhcp-discover`), or create an `OOBSubnet`/edit `dev/metaldhcp.yaml`'s pool.
+broadcast-dhcp-discover`), or create an `OOBSubnet`/edit `dev/values.yaml`.
 - metaldhcp runs as root with `NET_RAW`/`NET_BIND_SERVICE` here — dev convenience, not a
   production posture.
-- The pool, lease time, and server-id live in the `metaldhcp-config` ConfigMap in
-  `dev/metaldhcp.yaml`.
+- The pool, lease time, and server-id live in `dev/values.yaml` (rendered into the chart's
+  ConfigMap by Tilt).

@@ -1,0 +1,25 @@
+name: Chart
+
+on:
+  pull_request:
+    paths:
+      - 'chart/**'
+      - 'dev/values.yaml'
+      - '.github/workflows/chart.yml'
+
+jobs:
+  lint-and-render:
+    name: Lint and render chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+      - name: Lint (defaults)
+        run: helm lint ./chart/metaldhcp
+      - name: Lint (dev values)
+        run: helm lint ./chart/metaldhcp -f dev/values.yaml
+      - name: Render (defaults)
+        run: helm template metaldhcp ./chart/metaldhcp
+      - name: Render (dev values)
+        run: helm template metaldhcp ./chart/metaldhcp -f dev/values.yaml

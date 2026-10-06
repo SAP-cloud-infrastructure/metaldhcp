@@ -1,0 +1,10 @@
+{{- if .Values.createNamespace }}
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+{{- end }}

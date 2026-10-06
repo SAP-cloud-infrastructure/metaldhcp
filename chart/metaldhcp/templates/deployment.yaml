@@ -1,0 +1,55 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: MIT
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "metaldhcp.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "metaldhcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "metaldhcp.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "metaldhcp.fullname" . }}
+      containers:
+        - name: metaldhcp
+          image: {{ include "metaldhcp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-config"
+            - "/etc/metaldhcp/config.yaml"
+            - "-loglevel"
+            - {{ .Values.server.logLevel | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/metaldhcp
+              readOnly: true
+        {{- if .Values.debug.enabled }}
+        - name: debug
+          image: {{ .Values.debug.image }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ip link add veth0-server type veth peer name veth0
+              ip addr add {{ .Values.debug.serverIP }}{{ .Values.debug.serverCIDR }} dev veth0-server
+              ip link set veth0-server up
+              ip link set veth0 up
+              echo "veth pair ready"
+              sleep infinity
+          securityContext:
+            capabilities:
+              add: ["NET_RAW", "NET_ADMIN"]
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "metaldhcp.fullname" . }}-config
