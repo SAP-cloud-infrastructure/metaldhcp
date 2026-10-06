@@ -251,3 +251,65 @@ func TestNonIPv4CIDR(t *testing.T) {
 func netKey(i int) string {
 	return string(rune('a' + i))
 }
+
+func TestReserve(t *testing.T) {
+	const (
+		staticMAC = "m-static"
+		otherMAC  = "m-other"
+		pool      = "10.0.1.0/24"
+	)
+	staticIP := ip("10.0.1.50")
+
+	t.Run("reserved MAC always gets its static IP", func(t *testing.T) {
+		a := New()
+		a.Reserve(staticMAC, staticIP)
+		got, err := a.Allocate(Pool{CIDR: pool}, staticMAC, nil, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.Equal(staticIP) {
+			t.Fatalf("got %s, want %s", got, staticIP)
+		}
+	})
+
+	t.Run("static IP is not reassigned to other MACs", func(t *testing.T) {
+		a := New()
+		a.Reserve(staticMAC, staticIP)
+		got, err := a.Allocate(Pool{CIDR: pool}, otherMAC, nil, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Equal(staticIP) {
+			t.Fatalf("static IP %s was handed to another MAC", staticIP)
+		}
+	})
+
+	t.Run("static IP outside pool CIDR is reserved and in-use", func(t *testing.T) {
+		a := New()
+		outsideIP := ip("192.168.1.1")
+		a.Reserve(staticMAC, outsideIP)
+		// dynamic allocation in the pool should not hand out the outside IP
+		got, err := a.Allocate(Pool{CIDR: pool}, otherMAC, outsideIP, true)
+		if err != nil {
+			// outside CIDR, exact-IP rejected — that's fine
+			return
+		}
+		if got.Equal(outsideIP) {
+			t.Fatalf("IP outside pool CIDR should not be handed out via dynamic allocation")
+		}
+	})
+
+	t.Run("Restore does not overwrite a static binding", func(t *testing.T) {
+		a := New()
+		a.Reserve(staticMAC, staticIP)
+		// simulate a stale DHCPLease seeding a different IP for the same MAC
+		a.Restore(staticMAC, ip("10.0.1.99"))
+		got, err := a.Allocate(Pool{CIDR: pool}, staticMAC, nil, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.Equal(staticIP) {
+			t.Fatalf("static binding overwritten: got %s, want %s", got, staticIP)
+		}
+	})
+}

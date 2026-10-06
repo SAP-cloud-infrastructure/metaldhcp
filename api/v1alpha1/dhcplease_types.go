@@ -15,9 +15,10 @@ import (
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:printcolumn:name="MAC",type=string,JSONPath=`.spec.macAddress`
+// +kubebuilder:printcolumn:name="Hostname",type=string,JSONPath=`.spec.hostname`
+// +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.spec.ip`
 // +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`
-// +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.macAddress`
 // +kubebuilder:selectablefield:JSONPath=`.spec.ip`
 type DHCPLease struct {
@@ -42,6 +43,10 @@ type DHCPLeaseSpec struct {
 
 	// ClientID is the DHCPv4 client identifier (option 61) from the request, if present.
 	ClientID string `json:"clientID,omitempty"`
+
+	// Hostname is the client hostname, either from option 12 in the request or from a
+	// static lease config entry.
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // +kubebuilder:object:root=true

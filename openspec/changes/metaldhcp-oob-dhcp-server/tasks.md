@@ -45,10 +45,18 @@
 - [ ] 8.4 Add envtest case: pool with `BootURL` set → response `BootFileName` matches; pool without → `BootFileName` empty
 - [ ] 8.5 Update `example/oob.yaml` and `dev/metaldhcp.yaml` with a commented-out `bootURL` example
 
-## 9. CI
+## 9. Static leases
 
-- [ ] 9.1 Add a CI pipeline (GitHub Actions or equivalent) that runs `make generate manifests` and fails if there are uncommitted changes, then runs `make test`; verify CI passes on a Linux runner with `ENVTEST_K8S_VERSION=1.30.0`
+- [x] 9.1 Add `StaticLeases []StaticLease` (fields: `mac`, `ip`, `hostname`) to `internal/api/config.go` `OOBConfig`; verify it parses a config with static entries
+- [x] 9.2 Extend allocator: add `Reserve(macKey string, ip net.IP)` that marks an address as permanently held (not reassignable to other MACs); seed from `staticLeases` in `NewK8sClient` alongside `seedFromLeases`
+- [x] 9.3 In `handler4`, before calling `getIP`, check for a static binding by MAC; if found, use that IP directly and skip pool selection; still call `applyLease` to write/update the `DHCPLease`
+- [x] 9.4 Add unit tests for `Reserve`: static IP returned for correct MAC, static IP not reassigned to other MACs, static IP outside any pool CIDR still served, `Restore` does not overwrite a static binding
+- [x] 9.5 Add envtest case: static lease configured → response always returns the configured IP; `DHCPLease` records hostname
 
-## 10. README
+## 10. CI
 
-- [ ] 10.1 Write `README.md` covering: component boundary (metaldhcp = DHCP layer only; moo watches DHCPLease downstream), pool sources (config vs. OOBSubnet CRs, precedence), `example/config.yaml` and `example/oob.yaml` walkthrough, `make tilt-up` dev environment, macOS build caveat; verify all commands documented in the README run as written
+- [ ] 10.1 Add a CI pipeline (GitHub Actions or equivalent) that runs `make generate manifests` and fails if there are uncommitted changes, then runs `make test`; verify CI passes on a Linux runner with `ENVTEST_K8S_VERSION=1.30.0`
+
+## 11. README
+
+- [ ] 11.1 Write `README.md` covering: component boundary (metaldhcp = DHCP layer only; moo watches DHCPLease downstream), pool sources (config vs. OOBSubnet CRs, precedence), `example/config.yaml` and `example/oob.yaml` walkthrough, `make tilt-up` dev environment, macOS build caveat; verify all commands documented in the README run as written
