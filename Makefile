@@ -79,6 +79,10 @@ chart-lint: ## Lint and render the Helm chart.
 	helm template metaldhcp ./chart/metaldhcp > /dev/null
 	helm template metaldhcp ./chart/metaldhcp -f dev/values.yaml > /dev/null
 
+.PHONY: test-dhcp
+test-dhcp: ## Run all dev DHCP test scenarios against the local kind cluster.
+	./dev/test-dhcp.sh
+
 KIND_CLUSTER_NAME ?= metaldhcp
 KIND_REGISTRY_PORT ?= 5001
 
