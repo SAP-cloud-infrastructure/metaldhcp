@@ -36,6 +36,9 @@ kubectl exec -it -n metaldhcp-system deploy/metaldhcp -c debug -- bash
 # from inside: full DHCP exchange
 udhcpc -i veth0 -n -q
 
+# send a hostname with the request (recorded in DHCPLease.spec.hostname)
+udhcpc -i veth0 -n -q -x hostname:node-direct
+
 # watch the wire while doing it
 tcpdump -i veth0-server -n port 67 or port 68 &
 udhcpc -i veth0 -n -q
@@ -44,71 +47,26 @@ udhcpc -i veth0 -n -q
 dhcping -v -s 192.168.100.1 -h 02:aa:bb:cc:dd:ee -t 3
 ```
 
-## Testing relay (giaddr)
+## Testing relay (giaddr) and static leases
 
-In production, DHCP packets from BMC/OOB ports arrive via a relay agent (DHCP helper address)
-which sets `giaddr` to its own address on the client subnet. metaldhcp uses `giaddr` as the
-pool-selection hint when it is non-zero; the actual allocation hint (`clientIP`/`requestedIP`)
-still drives exact-IP assignment within that pool.
-
-**Quick smoke-test (single pool, existing config)**
-
-`scapy` is in the netshoot image. From the `debug` sidecar:
+Run all four scenarios at once:
 
 ```sh
-scapy -H << 'EOF'
-mac = '02:aa:bb:cc:dd:01'
-pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='192.168.100.50', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),('hostname','node-relay-01'),'end'])
-sendp(pkt, iface='veth0')
-EOF
+make test-dhcp   # or ./dev/test-dhcp.sh
 ```
 
-In the metaldhcp logs (`kubectl logs -n metaldhcp-system deploy/metaldhcp -c metaldhcp`) you
-should see a debug line like:
+This sends a direct udhcpc request, two scapy packets with `giaddr` set (one per pool to verify
+pool routing), and a static-lease request. It prints the resulting `DHCPLease` table at the end.
+
+For the relay path, the metaldhcp logs should show:
 
 ```
 Allocating for MAC 02:aa:bb:cc:dd:01 (pool hint 192.168.100.50, alloc hint <nil>, exact false, relay true)
 ```
 
-The `relay true` flag and `pool hint 192.168.100.50` confirm the giaddr path. A `DHCPLease` is written with `Hostname: node-relay-01`.
-
-**Multi-pool routing test**
-
-The dev config already includes a second pool (`10.0.2.0/24`). Send with `giaddr` in that
-subnet to verify the correct pool is selected:
-
-```sh
-scapy -H << 'EOF'
-mac = '02:aa:bb:cc:dd:02'
-pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='10.0.2.1', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),('hostname','node-relay-02'),'end'])
-sendp(pkt, iface='veth0')
-EOF
-```
-
-The resulting `DHCPLease` should have an IP in `10.0.2.0/24`:
-
-```sh
-kubectl get dhcpleases -n metaldhcp-system -o wide
-```
-
-**Static lease test**
-
-The dev config pins `02:aa:bb:cc:dd:03` to `192.168.100.200` with hostname `bmc-static-dev`.
-Regardless of relay or pool hint, that MAC always gets the same IP:
-
-```sh
-scapy -H << 'EOF'
-mac = '02:aa:bb:cc:dd:03'
-pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
-sendp(pkt, iface='veth0')
-EOF
-```
-
-The resulting `DHCPLease` should always show `192.168.100.200` and `bmc-static-dev`:
-
-```sh
-kubectl get dhcpleases -n metaldhcp-system
-```
+The `relay true` flag and `pool hint` confirm the giaddr code path. The static lease
+(`02:aa:bb:cc:dd:03`) always returns `192.168.100.200` with hostname `node-direct-static`
+regardless of relay or pool hint.
 
 ## Observe
 

@@ -15,7 +15,7 @@ data:
       plugins:
         - lease_time: {{ .Values.server.leaseTime }}
         - server_id: {{ .Values.server.serverID }}
-        - netmask:
+        - netmask:{{ if .Values.server.netmask }} {{ .Values.server.netmask }}{{ end }}
         - oob: /etc/metaldhcp/oob.yaml
   oob.yaml: |
     namespace: {{ .Values.oob.namespace }}
