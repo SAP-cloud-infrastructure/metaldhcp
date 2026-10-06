@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
+	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/helper"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/printer"
 	"github.com/coredhcp/coredhcp/handler"
 	"github.com/coredhcp/coredhcp/logger"
@@ -137,6 +138,23 @@ func handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	macKey := helper.NormalizeMAC(mac)
+
+	if entry, ok := k8sClient.lookupStaticLease(macKey); ok {
+		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
+		resp.YourIPAddr = entry.ip
+		if entry.bootURL != "" {
+			resp.BootFileName = entry.bootURL
+		}
+		if entry.hostname != "" {
+			resp.Options.Update(dhcpv4.OptHostName(entry.hostname))
+		}
+		if err := k8sClient.applyLease(ctx, mac, entry.ip, entry.gateway, clientIdentifier(req), entry.hostname, resp.IPAddressLeaseTime(0)); err != nil {
+			log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+		}
+		return resp, false
+	}
+
 	log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t, relay %t)",
 		mac, poolHint, allocHint, exactIP, giaddr != nil && !giaddr.IsUnspecified())
 	leaseIP, gateway, bootURL, err := k8sClient.getIP(ctx, poolHint, mac, allocHint, exactIP)
@@ -150,7 +168,7 @@ func handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		resp.BootFileName = bootURL
 	}
 
-	if err := k8sClient.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), resp.IPAddressLeaseTime(0)); err != nil {
+	if err := k8sClient.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), requestHostname(req), resp.IPAddressLeaseTime(0)); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 	}
 
@@ -165,4 +183,9 @@ func clientIdentifier(req *dhcpv4.DHCPv4) string {
 		return ""
 	}
 	return hex.EncodeToString(raw)
+}
+
+// requestHostname returns the hostname from option 12 in the request, or "" when absent.
+func requestHostname(req *dhcpv4.DHCPv4) string {
+	return req.HostName()
 }

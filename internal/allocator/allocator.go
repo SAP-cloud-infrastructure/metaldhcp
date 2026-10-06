@@ -16,20 +16,39 @@ import (
 // Allocator tracks MAC-to-IP assignments and the set of in-use addresses across all
 // subnets. All exported methods are safe for concurrent use.
 type Allocator struct {
-	mu    sync.Mutex
-	byMAC map[string]net.IP   // normalized MAC key -> assigned IP
-	inUse map[string]struct{} // IP string -> reserved
+	mu       sync.Mutex
+	byMAC    map[string]net.IP
+	inUse    map[string]struct{}
+	reserved map[string]struct{} // mac keys with static bindings set by Reserve
 }
 
 func New() *Allocator {
 	return &Allocator{
-		byMAC: make(map[string]net.IP),
-		inUse: make(map[string]struct{}),
+		byMAC:    make(map[string]net.IP),
+		inUse:    make(map[string]struct{}),
+		reserved: make(map[string]struct{}),
 	}
 }
 
+// Reserve permanently pins macKey to ip. The binding is written into the allocator
+// and the IP is marked in-use so dynamic allocation never hands it out. Subsequent
+// Restore calls for the same macKey are silently ignored so that the DHCPLease ledger
+// cannot overwrite a static config binding on restart.
+func (a *Allocator) Reserve(macKey string, ip net.IP) {
+	ip = normalize(ip)
+	if ip == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.byMAC[macKey] = ip
+	a.inUse[ip.String()] = struct{}{}
+	a.reserved[macKey] = struct{}{}
+}
+
 // Restore seeds the allocator with an existing MAC->IP assignment, e.g. from a
-// persisted DHCPLease. Safe to call repeatedly during startup.
+// persisted DHCPLease. Safe to call repeatedly during startup. Skips MAC keys already
+// pinned by Reserve so that static config bindings take precedence over the ledger.
 func (a *Allocator) Restore(macKey string, ip net.IP) {
 	ip = normalize(ip)
 	if ip == nil {
@@ -37,6 +56,9 @@ func (a *Allocator) Restore(macKey string, ip net.IP) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if _, ok := a.reserved[macKey]; ok {
+		return
+	}
 	a.byMAC[macKey] = ip
 	a.inUse[ip.String()] = struct{}{}
 }

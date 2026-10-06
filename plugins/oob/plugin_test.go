@@ -276,4 +276,40 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out).NotTo(BeNil())
 		Expect(out.BootFileName).To(BeEmpty())
 	})
+
+	It("returns the static IP for a configured MAC regardless of pool hint", func(ctx SpecContext) {
+		ns := newNamespace(ctx)
+		const (
+			cidr     = "10.3.3.0/24"
+			staticIP = "10.3.3.55"
+			staticHN = "bmc-node001"
+		)
+
+		buildPlugin(api.OOBConfig{
+			Namespace: ns.Name,
+			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1"}},
+			StaticLeases: []api.StaticLease{
+				{MAC: testMAC, IP: staticIP, Hostname: staticHN},
+			},
+		})
+
+		mac, err := net.ParseMAC(testMAC)
+		Expect(err).NotTo(HaveOccurred())
+
+		// send with no pool hint — should still get the static IP
+		req, resp := discover(mac, nil)
+		out, drop := handler4(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		Expect(out.YourIPAddr.String()).To(Equal(staticIP))
+
+		// DHCPLease should record the hostname
+		lease := &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+		}
+		Eventually(ctx, Object(lease)).Should(SatisfyAll(
+			HaveField("Spec.IP", staticIP),
+			HaveField("Spec.Hostname", staticHN),
+		))
+	})
 })

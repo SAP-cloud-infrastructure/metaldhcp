@@ -66,6 +66,10 @@ data:
         rangeEnd: 10.0.2.100
         leaseTime: 1h
         # bootURL: https://boot-operator-remote.example.com/boot
+    staticLeases:
+      - mac: 02:aa:bb:cc:dd:03
+        ip: 192.168.100.200
+        hostname: bmc-static-dev
 ---
 apiVersion: apps/v1
 kind: Deployment

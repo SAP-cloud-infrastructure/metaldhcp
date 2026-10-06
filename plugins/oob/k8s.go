@@ -21,12 +21,20 @@ import (
 
 const unknownIP = "0.0.0.0"
 
+type staticEntry struct {
+	ip       net.IP
+	gateway  string
+	bootURL  string
+	hostname string
+}
+
 type K8sClient struct {
 	Client       client.Client
 	Namespace    string
 	SubnetLabels []api.SubnetLabel
 	configPools  []allocator.Pool
 	alloc        *allocator.Allocator
+	statics      map[string]staticEntry // normalized MAC key -> static binding
 }
 
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
@@ -36,7 +44,9 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 		SubnetLabels: cfg.SubnetLabels,
 		configPools:  configPools(cfg.Subnets),
 		alloc:        allocator.New(),
+		statics:      make(map[string]staticEntry),
 	}
+	k.seedStaticLeases(cfg.StaticLeases)
 	if err := k.seedFromLeases(ctx); err != nil {
 		return nil, fmt.Errorf("failed to seed allocator from DHCPLeases: %w", err)
 	}
@@ -55,6 +65,42 @@ func configPools(subnets []api.Subnet) []allocator.Pool {
 		})
 	}
 	return pools
+}
+
+// seedStaticLeases registers static MAC→IP bindings, preventing dynamic allocation from
+// handing those addresses to other clients. It also pre-computes gateway/bootURL by
+// looking up which config pool (if any) contains each static IP.
+func (k *K8sClient) seedStaticLeases(leases []api.StaticLease) {
+	for _, sl := range leases {
+		mac, err := net.ParseMAC(sl.MAC)
+		if err != nil {
+			log.Warningf("Skipping static lease with invalid MAC %q: %v", sl.MAC, err)
+			continue
+		}
+		ip := net.ParseIP(sl.IP)
+		if ip == nil {
+			log.Warningf("Skipping static lease %s with invalid IP %q", sl.MAC, sl.IP)
+			continue
+		}
+		macKey := helper.NormalizeMAC(mac)
+		k.alloc.Reserve(macKey, ip)
+
+		entry := staticEntry{ip: ip.To4(), hostname: sl.Hostname}
+		for _, p := range k.configPools {
+			if helper.CheckIPInCIDR(ip, p.CIDR, log) {
+				entry.gateway = p.Gateway
+				entry.bootURL = p.BootURL
+				break
+			}
+		}
+		k.statics[macKey] = entry
+		log.Infof("Static lease: MAC %s → %s", sl.MAC, sl.IP)
+	}
+}
+
+func (k *K8sClient) lookupStaticLease(macKey string) (staticEntry, bool) {
+	e, ok := k.statics[macKey]
+	return e, ok
 }
 
 // seedFromLeases rebuilds in-memory allocator state from the durable DHCPLease ledger so that
@@ -155,7 +201,7 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 
 // applyLease upserts the DHCPLease for a MAC. The object name is the normalized MAC so re-leases
 // patch the same object and never create duplicates.
-func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, gateway, clientID string, leaseTime time.Duration) error {
+func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, gateway, clientID, hostname string, leaseTime time.Duration) error {
 	lease := &metaldhcpv1alpha1.DHCPLease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      helper.NormalizeMAC(mac),
@@ -168,6 +214,7 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 		lease.Spec.IP = ip.String()
 		lease.Spec.Gateway = gateway
 		lease.Spec.ClientID = clientID
+		lease.Spec.Hostname = hostname
 		if leaseTime > 0 {
 			lease.Spec.LeaseTime = &metav1.Duration{Duration: leaseTime}
 		}

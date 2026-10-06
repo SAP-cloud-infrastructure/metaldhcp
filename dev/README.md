@@ -58,7 +58,7 @@ still drives exact-IP assignment within that pool.
 ```sh
 scapy -H << 'EOF'
 mac = '02:aa:bb:cc:dd:01'
-pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='192.168.100.50', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
+pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='192.168.100.50', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),('hostname','node-relay-01'),'end'])
 sendp(pkt, iface='veth0')
 EOF
 ```
@@ -70,7 +70,7 @@ should see a debug line like:
 Allocating for MAC 02:aa:bb:cc:dd:01 (pool hint 192.168.100.50, alloc hint <nil>, exact false, relay true)
 ```
 
-The `relay true` flag and `pool hint 192.168.100.50` confirm the giaddr path. A `DHCPLease` is written.
+The `relay true` flag and `pool hint 192.168.100.50` confirm the giaddr path. A `DHCPLease` is written with `Hostname: node-relay-01`.
 
 **Multi-pool routing test**
 
@@ -79,8 +79,8 @@ subnet to verify the correct pool is selected:
 
 ```sh
 scapy -H << 'EOF'
-mac = '02:aa:bb:cc:dd:01'
-pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='10.0.2.1', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
+mac = '02:aa:bb:cc:dd:02'
+pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='10.0.2.1', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),('hostname','node-relay-02'),'end'])
 sendp(pkt, iface='veth0')
 EOF
 ```
@@ -89,6 +89,25 @@ The resulting `DHCPLease` should have an IP in `10.0.2.0/24`:
 
 ```sh
 kubectl get dhcpleases -n metaldhcp-system -o wide
+```
+
+**Static lease test**
+
+The dev config pins `02:aa:bb:cc:dd:03` to `192.168.100.200` with hostname `bmc-static-dev`.
+Regardless of relay or pool hint, that MAC always gets the same IP:
+
+```sh
+scapy -H << 'EOF'
+mac = '02:aa:bb:cc:dd:03'
+pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
+sendp(pkt, iface='veth0')
+EOF
+```
+
+The resulting `DHCPLease` should always show `192.168.100.200` and `bmc-static-dev`:
+
+```sh
+kubectl get dhcpleases -n metaldhcp-system
 ```
 
 ## Observe
@@ -112,7 +131,7 @@ make kind-delete     # delete the kind cluster and registry
 
 - The exact `dhcping` flags vary by build; the goal is simply an IPv4 DISCOVER to `:67`. If
   `dhcping` isn't cooperative, any IPv4 DHCP DISCOVER against the pod works (e.g. `nmap --script
-  broadcast-dhcp-discover`), or create an `OOBSubnet`/edit `dev/metaldhcp.yaml`'s pool.
+broadcast-dhcp-discover`), or create an `OOBSubnet`/edit `dev/metaldhcp.yaml`'s pool.
 - metaldhcp runs as root with `NET_RAW`/`NET_BIND_SERVICE` here — dev convenience, not a
   production posture.
 - The pool, lease time, and server-id live in the `metaldhcp-config` ConfigMap in
