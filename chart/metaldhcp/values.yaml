@@ -13,12 +13,16 @@ namespace: metaldhcp-system
 # Set to false when the namespace is managed externally.
 createNamespace: true
 
+# externalIP is assigned to the LoadBalancer Service and used as the DHCP server ID.
+# DHCP relay agents must be configured to forward to this address.
+externalIP: ""
+
 server:
   listenAddr: "0.0.0.0:67"
   leaseTime: 3600s
-  serverID: "0.0.0.0"
   netmask: "255.255.255.0"
   logLevel: info
+  healthAddr: ":8080"
 
 # oob plugin configuration — maps directly to the oob.yaml config file.
 oob:
@@ -50,6 +54,14 @@ securityContext:
     add:
       - NET_BIND_SERVICE
       - NET_RAW
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
 
 # debug adds a netshoot sidecar that creates a veth pair for local DHCP testing.
 # Enable in dev environments only; not suitable for production.

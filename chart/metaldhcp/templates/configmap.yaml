@@ -14,7 +14,7 @@ data:
         - {{ .Values.server.listenAddr | quote }}
       plugins:
         - lease_time: {{ .Values.server.leaseTime }}
-        - server_id: {{ .Values.server.serverID }}
+        - server_id: {{ .Values.externalIP }}
         - netmask:{{ if .Values.server.netmask }} {{ .Values.server.netmask }}{{ end }}
         - oob: /etc/metaldhcp/oob.yaml
   oob.yaml: |
@@ -30,10 +30,18 @@ data:
     subnets:
       {{- range . }}
       - cidr: {{ .cidr }}
+        {{- if .gateway }}
         gateway: {{ .gateway }}
+        {{- end }}
+        {{- if .rangeStart }}
         rangeStart: {{ .rangeStart }}
+        {{- end }}
+        {{- if .rangeEnd }}
         rangeEnd: {{ .rangeEnd }}
+        {{- end }}
+        {{- if .leaseTime }}
         leaseTime: {{ .leaseTime }}
+        {{- end }}
         {{- if .bootURL }}
         bootURL: {{ .bootURL }}
         {{- end }}

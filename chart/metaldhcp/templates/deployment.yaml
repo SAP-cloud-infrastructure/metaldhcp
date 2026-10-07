@@ -18,6 +18,8 @@ spec:
         {{- include "metaldhcp.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "metaldhcp.fullname" . }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: metaldhcp
           image: {{ include "metaldhcp.image" . }}
@@ -27,8 +29,28 @@ spec:
             - "/etc/metaldhcp/config.yaml"
             - "-loglevel"
             - {{ .Values.server.logLevel | quote }}
+            - "-health-addr"
+            - {{ .Values.server.healthAddr | quote }}
+          ports:
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/metaldhcp

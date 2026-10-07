@@ -1,0 +1,4 @@
+processor:
+  ignoreTypes: []
+render:
+  kubernetesVersion: "1.30"

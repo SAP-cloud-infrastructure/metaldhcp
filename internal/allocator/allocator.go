@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // Allocator tracks MAC-to-IP assignments and the set of in-use addresses across all
@@ -66,10 +67,11 @@ func (a *Allocator) Restore(macKey string, ip net.IP) {
 // Pool describes the usable address space of an OOBSubnet.
 type Pool struct {
 	CIDR       string
-	Gateway    string // optional, excluded from allocation
-	RangeStart string // optional lower bound (inclusive)
-	RangeEnd   string // optional upper bound (inclusive)
-	BootURL    string // optional UEFI HTTP boot URL sent as DHCP BootFileName
+	Gateway    string        // optional, excluded from allocation
+	RangeStart string        // optional lower bound (inclusive)
+	RangeEnd   string        // optional upper bound (inclusive)
+	BootURL    string        // optional UEFI HTTP boot URL sent as DHCP BootFileName
+	LeaseTime  time.Duration // optional per-pool override; 0 means use the global lease_time plugin
 }
 
 // Allocate returns the IPv4 address for macKey within pool. It returns the MAC's
@@ -124,11 +126,11 @@ func (a *Allocator) firstFree(cidrNet *net.IPNet, pool Pool) (net.IP, error) {
 	gateway := normalize(net.ParseIP(pool.Gateway))
 
 	lo := nextIP(network) // first usable host
-	if start := normalize(net.ParseIP(pool.RangeStart)); start != nil && cidrNet.Contains(start) {
+	if start := normalize(net.ParseIP(pool.RangeStart)); start != nil && cidrNet.Contains(start) && !start.Equal(network) {
 		lo = start
 	}
 	hi := prevIP(broadcast) // last usable host
-	if end := normalize(net.ParseIP(pool.RangeEnd)); end != nil && cidrNet.Contains(end) {
+	if end := normalize(net.ParseIP(pool.RangeEnd)); end != nil && cidrNet.Contains(end) && !end.Equal(broadcast) {
 		hi = end
 	}
 

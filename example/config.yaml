@@ -9,8 +9,6 @@ server4:
         - lease_time: 3600s
         # announce subnet mask from the server's interface
         - netmask:
-        # announce default gateway
-        - router:
         # announce DNS servers
         - dns: 8.8.8.8 8.8.4.4
         # oob allocates an IPv4 address (sets YourIPAddr) from config-defined or OOBSubnet CR pools
