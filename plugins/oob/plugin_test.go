@@ -11,6 +11,7 @@ import (
 	metaldhcpv1alpha1 "github.com/SAP-cloud-infrastructure/metaldhcp/api/v1alpha1"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/helper"
+	"github.com/coredhcp/coredhcp/handler"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	. "github.com/onsi/ginkgo/v2"
@@ -23,9 +24,8 @@ import (
 
 const testMAC = "aa:bb:cc:dd:ee:01"
 
-// buildPlugin writes cfg to a temp config file and runs setup4, which assigns the
-// package-level k8sClient and returns the handler.
-func buildPlugin(cfg api.OOBConfig) {
+// buildPlugin writes cfg to a temp config file, runs setup4, and returns the handler.
+func buildPlugin(cfg api.OOBConfig) handler.Handler4 {
 	data, err := yaml.Marshal(cfg)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -35,6 +35,7 @@ func buildPlugin(cfg api.OOBConfig) {
 	h, err := setup4(path)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(h).NotTo(BeNil())
+	return h
 }
 
 // discover builds a DISCOVER req and its reply stub, optionally seeding the reply's
@@ -72,7 +73,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		ns := newNamespace(ctx)
 		const cidr = "192.168.42.0/24"
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "192.168.42.1"}},
 		})
@@ -81,7 +82,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("192.168.42.10"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 		Expect(contains(cidr, out.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must be within %s", out.YourIPAddr, cidr)
@@ -110,7 +111,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(crClient.Create(ctx, subnet)).To(Succeed())
 		DeferCleanup(crClient.Delete, subnet)
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace:    ns.Name,
 			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
 		})
@@ -119,7 +120,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("192.168.43.10"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 		Expect(contains(cidr, out.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must be within %s", out.YourIPAddr, cidr)
@@ -137,7 +138,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		ns := newNamespace(ctx)
 		const cidr = "192.168.44.0/24"
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "192.168.44.1"}},
 		})
@@ -146,7 +147,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		req1, resp1 := discover(mac, net.ParseIP("192.168.44.10"))
-		out1, drop1 := handler4(req1, resp1)
+		out1, drop1 := h(req1, resp1)
 		Expect(drop1).To(BeFalse())
 		Expect(out1).NotTo(BeNil())
 		firstIP := out1.YourIPAddr.String()
@@ -157,7 +158,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Eventually(Object(lease)).Should(HaveField("Spec.IP", firstIP))
 
 		req2, resp2 := discover(mac, net.ParseIP("192.168.44.10"))
-		out2, drop2 := handler4(req2, resp2)
+		out2, drop2 := h(req2, resp2)
 		Expect(drop2).To(BeFalse())
 		Expect(out2).NotTo(BeNil())
 		Expect(out2.YourIPAddr.String()).To(Equal(firstIP), "re-lease must return the same IP")
@@ -171,7 +172,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		const cidr1 = "10.0.1.0/24"
 		const cidr2 = "10.0.2.0/24"
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets: []api.Subnet{
 				{CIDR: cidr1, Gateway: "10.0.1.1"},
@@ -185,7 +186,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		// Relay for the second subnet: giaddr is in cidr2.
 		req, resp := discoverRelay(mac, net.ParseIP("10.0.2.1"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 		Expect(contains(cidr2, out.YourIPAddr)).To(BeTrue(),
@@ -205,7 +206,7 @@ var _ = Describe("OOB plugin handler4", func() {
 	It("drops the request when no pool CIDR matches the hint", func(ctx SpecContext) {
 		ns := newNamespace(ctx)
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
 		})
@@ -214,7 +215,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.99.99.5"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(out).To(BeNil())
 		Expect(drop).To(BeTrue())
 	})
@@ -223,7 +224,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		ns := newNamespace(ctx)
 
 		// A /31 has no usable host addresses, so allocation always fails.
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: "10.0.0.0/31"}},
 		})
@@ -232,7 +233,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.0.0.0"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(out).To(BeNil())
 		Expect(drop).To(BeTrue())
 	})
@@ -244,7 +245,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			bootURL = "https://boot-operator.example.com/boot"
 		)
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL}},
 		})
@@ -253,7 +254,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.1.1.1"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 		Expect(out.BootFileName).To(Equal(bootURL))
@@ -262,7 +263,7 @@ var _ = Describe("OOB plugin handler4", func() {
 	It("leaves BootFileName empty when pool has no bootURL", func(ctx SpecContext) {
 		ns := newNamespace(ctx)
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1"}},
 		})
@@ -271,7 +272,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.2.2.1"))
 
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 		Expect(out.BootFileName).To(BeEmpty())
@@ -285,7 +286,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			staticHN = "bmc-node001"
 		)
 
-		buildPlugin(api.OOBConfig{
+		h := buildPlugin(api.OOBConfig{
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1"}},
 			StaticLeases: []api.StaticLease{
@@ -298,7 +299,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// send with no pool hint — should still get the static IP
 		req, resp := discover(mac, nil)
-		out, drop := handler4(req, resp)
+		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 		Expect(out.YourIPAddr.String()).To(Equal(staticIP))

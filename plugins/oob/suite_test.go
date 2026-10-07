@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -38,6 +39,21 @@ var (
 	testEnv  *envtest.Environment
 )
 
+func envtestK8sVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == "k8s.io/api" {
+				var minor int
+				fmt.Sscanf(dep.Version, "v0.%d.", &minor)
+				if minor > 0 {
+					return fmt.Sprintf("1.%d.0", minor)
+				}
+			}
+		}
+	}
+	return "1.30.0"
+}
+
 func TestOOB(t *testing.T) {
 	SetDefaultConsistentlyPollingInterval(pollingInterval)
 	SetDefaultEventuallyPollingInterval(pollingInterval)
@@ -63,7 +79,7 @@ var _ = BeforeSuite(func() {
 		// Makefile target provisions the binaries and exports KUBEBUILDER_ASSETS,
 		// which takes precedence over this path.
 		BinaryAssetsDirectory: filepath.Join("..", "..", "bin", "k8s",
-			fmt.Sprintf("1.37.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
+			fmt.Sprintf("%s-%s-%s", envtestK8sVersion(), runtime.GOOS, runtime.GOARCH)),
 	}
 
 	var err error

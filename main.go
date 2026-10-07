@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/coredhcp/coredhcp/config"
@@ -39,12 +40,13 @@ var (
 )
 
 func main() {
-	var configFile, logLevel string
+	var configFile, logLevel, healthAddr string
 	var listPlugins bool
 
 	flag.StringVar(&configFile, "config", "", "config file")
 	flag.BoolVar(&listPlugins, "list-plugins", false, "list plugins")
 	flag.StringVar(&logLevel, "loglevel", "info", "log level (debug, info, warning, error, fatal, panic)")
+	flag.StringVar(&healthAddr, "health-addr", ":8080", "address for the /healthz HTTP endpoint")
 	flag.Parse()
 
 	if listPlugins {
@@ -77,6 +79,16 @@ func main() {
 			log.Fatalf("Failed to initialize kubernetes client: %v", err)
 		}
 	}
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		if err := http.ListenAndServe(healthAddr, mux); err != nil {
+			log.Errorf("Health server error: %v", err)
+		}
+	}()
 
 	srv, err := server.Start(cfg)
 	if err != nil {
