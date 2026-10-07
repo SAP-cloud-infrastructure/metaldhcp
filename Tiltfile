@@ -38,9 +38,3 @@ k8s_yaml(helm(
     values=["./dev/values.yaml"],
 ))
 k8s_resource("metaldhcp", resource_deps=["crds"])
-local_resource(
-    "metaldhcp-config-reload",
-    cmd="kubectl rollout restart deployment/metaldhcp -n metaldhcp-system",
-    deps=["dev/values.yaml", "chart/metaldhcp/templates/configmap.yaml"],
-    resource_deps=["metaldhcp"],
-)
