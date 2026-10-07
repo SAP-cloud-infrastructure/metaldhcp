@@ -14,7 +14,9 @@ data:
         - {{ .Values.server.listenAddr | quote }}
       plugins:
         - lease_time: {{ .Values.server.leaseTime }}
+        {{- if .Values.externalIP }}
         - server_id: {{ .Values.externalIP }}
+        {{- end }}
         - netmask:{{ if .Values.server.netmask }} {{ .Values.server.netmask }}{{ end }}
         - oob: /etc/metaldhcp/oob.yaml
   oob.yaml: |

@@ -7,9 +7,10 @@ image:
   repository: localhost:5001/metaldhcp
   tag: latest
 
+externalIP: "192.168.100.1"
+
 server:
   logLevel: debug
-  serverID: "192.168.100.1"
   leaseTime: 1h
   netmask: "255.255.255.0"
 
