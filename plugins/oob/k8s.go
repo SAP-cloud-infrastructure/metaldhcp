@@ -14,6 +14,7 @@ import (
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/helper"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/kubernetes"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -56,12 +57,21 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 func configPools(subnets []api.Subnet) []allocator.Pool {
 	pools := make([]allocator.Pool, 0, len(subnets))
 	for _, s := range subnets {
+		var lt time.Duration
+		if s.LeaseTime != "" {
+			if d, err := time.ParseDuration(s.LeaseTime); err == nil {
+				lt = d
+			} else {
+				log.Warningf("Ignoring invalid leaseTime %q for subnet %s: %v", s.LeaseTime, s.CIDR, err)
+			}
+		}
 		pools = append(pools, allocator.Pool{
 			CIDR:       s.CIDR,
 			Gateway:    s.Gateway,
 			RangeStart: s.RangeStart,
 			RangeEnd:   s.RangeEnd,
 			BootURL:    s.BootURL,
+			LeaseTime:  lt,
 		})
 	}
 	return pools
@@ -131,17 +141,17 @@ func (k *K8sClient) seedFromLeases(ctx context.Context) error {
 // requested + exactIP come from the client's own address hints (clientIP / requestedIP)
 // and are decoupled from poolHint so that relayed packets can use giaddr for pool
 // selection while still honoring the client's existing lease.
-func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.HardwareAddr, requested net.IP, exactIP bool) (net.IP, string, string, error) {
+func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.HardwareAddr, requested net.IP, exactIP bool) (net.IP, string, string, time.Duration, error) {
 	pool, err := k.selectPool(ctx, poolHint)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", 0, err
 	}
 
 	leaseIP, err := k.alloc.Allocate(*pool, helper.NormalizeMAC(mac), requested, exactIP)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)
+		return nil, "", "", 0, fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)
 	}
-	return leaseIP, pool.Gateway, pool.BootURL, nil
+	return leaseIP, pool.Gateway, pool.BootURL, pool.LeaseTime, nil
 }
 
 // selectPool returns the pool whose CIDR contains ipaddr, drawing from config-defined pools when
@@ -160,7 +170,7 @@ func (k *K8sClient) selectPool(ctx context.Context, ipaddr net.IP) (*allocator.P
 		return nil, fmt.Errorf("no pools configured and no OOBSubnet found in %s", k.Namespace)
 	}
 
-	if ipaddr == nil || ipaddr.String() == unknownIP {
+	if ipaddr == nil || ipaddr.IsUnspecified() {
 		if len(pools) == 1 {
 			return &pools[0], nil
 		}
@@ -188,12 +198,17 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 
 	pools := make([]allocator.Pool, 0, len(list.Items))
 	for _, s := range list.Items {
+		var lt time.Duration
+		if s.Spec.LeaseTime != nil {
+			lt = s.Spec.LeaseTime.Duration
+		}
 		pools = append(pools, allocator.Pool{
 			CIDR:       s.Spec.CIDR,
 			Gateway:    s.Spec.Gateway,
 			RangeStart: s.Spec.RangeStart,
 			RangeEnd:   s.Spec.RangeEnd,
 			BootURL:    s.Spec.BootURL,
+			LeaseTime:  lt,
 		})
 	}
 	return pools, nil
@@ -202,14 +217,7 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 // applyLease upserts the DHCPLease for a MAC. The object name is the normalized MAC so re-leases
 // patch the same object and never create duplicates.
 func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, gateway, clientID, hostname string, leaseTime time.Duration) error {
-	lease := &metaldhcpv1alpha1.DHCPLease{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      helper.NormalizeMAC(mac),
-			Namespace: k.Namespace,
-		},
-	}
-
-	result, err := controllerutil.CreateOrPatch(ctx, k.Client, lease, func() error {
+	mutate := func(lease *metaldhcpv1alpha1.DHCPLease) {
 		lease.Spec.MACAddress = mac.String()
 		lease.Spec.IP = ip.String()
 		lease.Spec.Gateway = gateway
@@ -218,8 +226,29 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 		if leaseTime > 0 {
 			lease.Spec.LeaseTime = &metav1.Duration{Duration: leaseTime}
 		}
+	}
+
+	newLease := func() *metaldhcpv1alpha1.DHCPLease {
+		return &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      helper.NormalizeMAC(mac),
+				Namespace: k.Namespace,
+			},
+		}
+	}
+
+	lease := newLease()
+	result, err := controllerutil.CreateOrPatch(ctx, k.Client, lease, func() error {
+		mutate(lease)
 		return nil
 	})
+	if apierrors.IsAlreadyExists(err) {
+		lease = newLease()
+		result, err = controllerutil.CreateOrPatch(ctx, k.Client, lease, func() error {
+			mutate(lease)
+			return nil
+		})
+	}
 	if err != nil {
 		return err
 	}

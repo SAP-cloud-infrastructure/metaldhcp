@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/helper"
@@ -28,8 +29,6 @@ var Plugin = plugins.Plugin{
 	Setup4: setup4,
 	Setup6: setup6,
 }
-
-var k8sClient *K8sClient
 
 // args[0] = path to config file
 func parseArgs(args ...string) (string, error) {
@@ -64,13 +63,13 @@ func setup4(args ...string) (handler.Handler4, error) {
 		return nil, err
 	}
 
-	k8sClient, err = NewK8sClient(context.Background(), oobConfig)
+	client, err := NewK8sClient(context.Background(), oobConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create k8s client: %w", err)
 	}
 
 	log.Print("Loaded oob plugin for DHCPv4.")
-	return handler4, nil
+	return client.handler4, nil
 }
 
 // setup6 registers the plugin for DHCPv6 but OOB allocation is IPv4-only; handler6 is a
@@ -87,7 +86,7 @@ func handler6(req, resp dhcpv6.DHCPv6) (dhcpv6.DHCPv6, bool) {
 	return resp, false
 }
 
-func handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
+func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if req == nil {
 		log.Error("Received nil IPv4 request")
 		return nil, true
@@ -135,40 +134,47 @@ func handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		poolHint = allocHint
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	macKey := helper.NormalizeMAC(mac)
 
-	if entry, ok := k8sClient.lookupStaticLease(macKey); ok {
+	var leaseIP net.IP
+	var gateway, bootURL, hostname string
+	var poolLeaseTime time.Duration
+
+	if entry, ok := k.lookupStaticLease(macKey); ok {
 		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
-		resp.YourIPAddr = entry.ip
-		if entry.bootURL != "" {
-			resp.BootFileName = entry.bootURL
+		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
+	} else {
+		log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t, relay %t)",
+			mac, poolHint, allocHint, exactIP, giaddr != nil && !giaddr.IsUnspecified())
+		var err error
+		leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
+		if err != nil {
+			log.Errorf("Could not allocate IP: %s", err)
+			return nil, true
 		}
-		if entry.hostname != "" {
-			resp.Options.Update(dhcpv4.OptHostName(entry.hostname))
-		}
-		if err := k8sClient.applyLease(ctx, mac, entry.ip, entry.gateway, clientIdentifier(req), entry.hostname, resp.IPAddressLeaseTime(0)); err != nil {
-			log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
-		}
-		return resp, false
+		hostname = requestHostname(req)
 	}
 
-	log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t, relay %t)",
-		mac, poolHint, allocHint, exactIP, giaddr != nil && !giaddr.IsUnspecified())
-	leaseIP, gateway, bootURL, err := k8sClient.getIP(ctx, poolHint, mac, allocHint, exactIP)
-	if err != nil {
-		log.Errorf("Could not allocate IP: %s", err)
-		return nil, true
+	leaseTime := resp.IPAddressLeaseTime(0)
+	if poolLeaseTime > 0 {
+		leaseTime = poolLeaseTime
+		resp.Options.Update(dhcpv4.OptIPAddressLeaseTime(poolLeaseTime))
 	}
 
 	resp.YourIPAddr = leaseIP
+	if gw := net.ParseIP(gateway); gw != nil {
+		resp.Options.Update(dhcpv4.OptRouter(gw))
+	}
 	if bootURL != "" {
 		resp.BootFileName = bootURL
 	}
-
-	if err := k8sClient.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), requestHostname(req), resp.IPAddressLeaseTime(0)); err != nil {
+	if hostname != "" {
+		resp.Options.Update(dhcpv4.OptHostName(hostname))
+	}
+	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, leaseTime); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 	}
 

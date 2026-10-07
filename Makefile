@@ -60,7 +60,11 @@ manifests: controller-gen ## Generate CRD manifests.
 	$(CONTROLLER_GEN) crd paths="./api/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: check-gen
-check-gen: generate manifests fmt ## Run code generation, manifests generation, and formatting checks.
+check-gen: generate manifests docs fmt ## Run code generation, manifests generation, and formatting checks.
+
+.PHONY: docs
+docs: crd-ref-docs ## Generate CRD API reference docs.
+	$(CRD_REF_DOCS) --source-path=./api --renderer=markdown --output-path=docs/api.md --config=hack/crd-ref-docs.yaml
 
 .PHONY: test
 test: generate manifests fmt vet envtest ## Run tests.
@@ -118,6 +122,7 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 GOIMPORTS ?= $(LOCALBIN)/goimports-$(GOIMPORTS_VERSION)
 ADDLICENSE ?= $(LOCALBIN)/addlicense
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs-$(CRD_REF_DOCS_VERSION)
 
 ## Tool Versions
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
@@ -125,6 +130,7 @@ ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v2.11.0
 GOIMPORTS_VERSION ?= v0.38.0
 ADDLICENSE_VERSION ?= v1.1.1
+CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
@@ -150,6 +156,11 @@ $(GOIMPORTS): $(LOCALBIN)
 addlicense: $(ADDLICENSE) ## Download addlicense locally if necessary.
 $(ADDLICENSE): $(LOCALBIN)
 	$(call go-install-tool,$(ADDLICENSE),github.com/google/addlicense,$(ADDLICENSE_VERSION))
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary.
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary (ideally with version)
