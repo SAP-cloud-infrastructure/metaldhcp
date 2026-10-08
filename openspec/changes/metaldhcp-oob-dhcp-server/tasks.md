@@ -74,9 +74,15 @@
 - [ ] 13.3 Add a `ServiceMonitor` to the Helm chart (optional, gated by a values flag)
 - [ ] 13.4 Add unit tests for counter increments; verify the metrics endpoint responds in envtest
 
-## 14. DNS propagation
+## 14. Kubernetes events for unmatched DHCP requests
 
-- [ ] 14.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
-- [ ] 14.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
-- [ ] 14.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
-- [ ] 14.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed
+- [x] 14.1 Wire a `record.EventRecorder` in `main.go` (via `record.NewEventRecorder`) and pass it into `K8sClient` at init time
+- [x] 14.2 In `handler4`, emit a `Warning` event on the metaldhcp Pod for each DISCOVER/REQUEST that cannot be served: no pool found (`NoPoolFound`), pool exhausted (`PoolExhausted`), allocation error (`AllocationFailed`); include MAC and giaddr in the message
+- [x] 14.3 Add envtest case: DISCOVER with unknown giaddr → Warning event emitted on Pod with reason `NoPoolFound`
+
+## 15. DNS propagation
+
+- [ ] 15.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
+- [ ] 15.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
+- [ ] 15.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
+- [ ] 15.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed

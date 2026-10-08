@@ -56,3 +56,14 @@ sendp(pkt, iface='veth0', verbose=False)
 echo ""
 echo "==> DHCPLeases:"
 kubectl --context "${CONTEXT}" -n "${NS}" get dhcpleases.dhcp.metal.ironcore.dev
+
+echo ""
+echo "==> 5. Unmatched relay (giaddr 10.255.255.1 — no pool) — expect Warning event NoPoolFound"
+scapy_send "
+mac = '02:aa:bb:cc:dd:ff'
+pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='10.255.255.1', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
+sendp(pkt, iface='veth0', verbose=False)
+"
+echo "    Waiting 2s for event to propagate..."
+sleep 2
+kubectl --context "${CONTEXT}" -n "${NS}" get events --field-selector reason=NoPoolFound
