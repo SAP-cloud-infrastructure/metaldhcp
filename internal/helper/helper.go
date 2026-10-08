@@ -10,11 +10,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DHCPPacket is the minimal interface the printer needs from a DHCP message.
-type DHCPPacket interface {
-	Summary() string
-}
-
 // NormalizeMAC renders a MAC as a lowercase, separator-free string suitable for use
 // as a Kubernetes object name and allocator key (e.g. "3c:ec:ef:aa:bb:cc" -> "3cecefaabbcc").
 func NormalizeMAC(mac net.HardwareAddr) string {
