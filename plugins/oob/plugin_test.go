@@ -17,7 +17,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sclientset "k8s.io/client-go/kubernetes"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 )
@@ -312,5 +317,46 @@ var _ = Describe("OOB plugin handler4", func() {
 			HaveField("Spec.IP", staticIP),
 			HaveField("Spec.Hostname", staticHN),
 		))
+	})
+
+	It("emits a Warning event with reason NoPoolFound when no pool matches the giaddr", func(ctx SpecContext) {
+		ns := newNamespace(ctx)
+
+		cs, err := k8sclientset.NewForConfig(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		broadcaster := record.NewBroadcaster()
+		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: cs.CoreV1().Events(ns.Name)})
+		DeferCleanup(broadcaster.Shutdown)
+
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "metaldhcp-0", Namespace: ns.Name}}
+		Expect(crClient.Create(ctx, pod)).To(Succeed())
+		DeferCleanup(crClient.Delete, pod)
+
+		recorder := broadcaster.NewRecorder(k8sscheme.Scheme, corev1.EventSource{Component: "metaldhcp"})
+		SetRecorder(recorder, pod)
+		DeferCleanup(func() { SetRecorder(nil, nil) })
+
+		h := buildPlugin(api.OOBConfig{
+			Namespace: ns.Name,
+			Subnets:   []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
+		})
+
+		mac, err := net.ParseMAC(testMAC)
+		Expect(err).NotTo(HaveOccurred())
+		req, resp := discoverRelay(mac, net.ParseIP("10.99.99.1"))
+
+		out, drop := h(req, resp)
+		Expect(out).To(BeNil())
+		Expect(drop).To(BeTrue())
+
+		eventList := &corev1.EventList{}
+		Eventually(func() []corev1.Event {
+			_ = crClient.List(ctx, eventList, client.InNamespace(ns.Name))
+			return eventList.Items
+		}).Should(ContainElement(SatisfyAll(
+			HaveField("Reason", "NoPoolFound"),
+			HaveField("Type", corev1.EventTypeWarning),
+		)))
 	})
 })

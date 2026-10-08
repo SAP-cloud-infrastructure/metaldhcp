@@ -13,3 +13,6 @@ rules:
   - apiGroups: ["dhcp.metal.ironcore.dev"]
     resources: ["dhcpleases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]

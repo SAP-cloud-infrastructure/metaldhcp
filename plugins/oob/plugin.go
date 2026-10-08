@@ -153,6 +153,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
 		if err != nil {
 			log.Errorf("Could not allocate IP: %s", err)
+			k.emitEvent(mac, giaddr, err)
 			return nil, true
 		}
 		hostname = requestHostname(req)

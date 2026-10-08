@@ -19,7 +19,13 @@ import (
 	"github.com/coredhcp/coredhcp/plugins/serverid"
 	"github.com/coredhcp/coredhcp/server"
 	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sclientset "k8s.io/client-go/kubernetes"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/kubernetes"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/plugins/oob"
@@ -78,6 +84,7 @@ func main() {
 		if err := kubernetes.InitClient(); err != nil {
 			log.Fatalf("Failed to initialize kubernetes client: %v", err)
 		}
+		setupEventRecorder()
 	}
 
 	go func() {
@@ -112,4 +119,32 @@ func shouldSetupKubeClient(cfg *config.Config) bool {
 		}
 	}
 	return configuredPlugins.HasAny(pluginsRequiringKubernetes.UnsortedList()...)
+}
+
+// setupEventRecorder creates a Kubernetes event recorder backed by the live API and wires
+// it into the oob plugin. POD_NAME and POD_NAMESPACE must be set via the Downward API.
+func setupEventRecorder() {
+	podName := os.Getenv("POD_NAME")
+	podNamespace := os.Getenv("POD_NAMESPACE")
+	if podName == "" || podNamespace == "" {
+		log.Warning("POD_NAME or POD_NAMESPACE unset — Kubernetes events will not be emitted")
+		return
+	}
+
+	cs, err := k8sclientset.NewForConfig(kubernetes.GetConfig())
+	if err != nil {
+		log.Warningf("Failed to create k8s clientset for event recorder: %v", err)
+		return
+	}
+
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: cs.CoreV1().Events(podNamespace)})
+
+	recorder := broadcaster.NewRecorder(
+		k8sscheme.Scheme,
+		corev1.EventSource{Component: "metaldhcp"},
+	)
+
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: podNamespace}}
+	oob.SetRecorder(recorder, pod)
 }

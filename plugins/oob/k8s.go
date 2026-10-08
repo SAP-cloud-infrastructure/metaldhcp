@@ -5,6 +5,7 @@ package oob
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -14,13 +15,37 @@ import (
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/helper"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/kubernetes"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const unknownIP = "0.0.0.0"
+
+// allocationError carries a structured event reason alongside the underlying error so
+// handler4 can emit the right Kubernetes Event reason without string matching.
+type allocationError struct {
+	reason string
+	err    error
+}
+
+func (e *allocationError) Error() string { return e.err.Error() }
+func (e *allocationError) Unwrap() error { return e.err }
+
+var (
+	globalRecorder record.EventRecorder
+	globalPodRef   *corev1.Pod
+)
+
+// SetRecorder wires the Kubernetes event recorder used to emit Warning events when a
+// DISCOVER/REQUEST cannot be served. Call once from main after InitClient.
+func SetRecorder(r record.EventRecorder, pod *corev1.Pod) {
+	globalRecorder = r
+	globalPodRef = pod
+}
 
 type staticEntry struct {
 	ip       net.IP
@@ -149,7 +174,7 @@ func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.Hardware
 
 	leaseIP, err := k.alloc.Allocate(*pool, helper.NormalizeMAC(mac), requested, exactIP)
 	if err != nil {
-		return nil, "", "", 0, fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)
+		return nil, "", "", 0, &allocationError{reason: "PoolExhausted", err: fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)}
 	}
 	return leaseIP, pool.Gateway, pool.BootURL, pool.LeaseTime, nil
 }
@@ -167,14 +192,14 @@ func (k *K8sClient) selectPool(ctx context.Context, ipaddr net.IP) (*allocator.P
 		pools = crPools
 	}
 	if len(pools) == 0 {
-		return nil, fmt.Errorf("no pools configured and no OOBSubnet found in %s", k.Namespace)
+		return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("no pools configured and no OOBSubnet found in %s", k.Namespace)}
 	}
 
 	if ipaddr == nil || ipaddr.IsUnspecified() {
 		if len(pools) == 1 {
 			return &pools[0], nil
 		}
-		return nil, fmt.Errorf("cannot select pool without an address hint: %d candidates", len(pools))
+		return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("cannot select pool without an address hint: %d candidates", len(pools))}
 	}
 
 	for i := range pools {
@@ -182,7 +207,7 @@ func (k *K8sClient) selectPool(ctx context.Context, ipaddr net.IP) (*allocator.P
 			return &pools[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no pool CIDR contains %s", ipaddr)
+	return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("no pool CIDR contains %s", ipaddr)}
 }
 
 func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error) {
@@ -255,4 +280,20 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 
 	log.Infof("DHCPLease %s/%s %s (MAC %s, IP %s)", k.Namespace, lease.Name, result, mac, ip)
 	return nil
+}
+
+// emitEvent fires a Warning Kubernetes event on the metaldhcp Pod when a DHCP request
+// cannot be served. It is a no-op when no recorder has been wired (e.g. in tests that
+// don't test events).
+func (k *K8sClient) emitEvent(mac net.HardwareAddr, giaddr net.IP, err error) {
+	if globalRecorder == nil || globalPodRef == nil {
+		return
+	}
+	reason := "AllocationFailed"
+	var ae *allocationError
+	if errors.As(err, &ae) {
+		reason = ae.reason
+	}
+	globalRecorder.Eventf(globalPodRef, corev1.EventTypeWarning, reason,
+		"unmatched DHCP request: MAC %s giaddr %s: %v", mac, giaddr, err)
 }

@@ -86,5 +86,7 @@ jobs:
         context: .
         platforms: ${{ env.platforms }}
         tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        labels: |
+          ${{ steps.meta.outputs.labels }}
+          source_repository=${{ github.server_url }}/${{ github.repository }}
         push: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ok-to-publish') }}
