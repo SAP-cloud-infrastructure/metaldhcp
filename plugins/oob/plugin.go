@@ -13,7 +13,6 @@ import (
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/helper"
-	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/printer"
 	"github.com/coredhcp/coredhcp/handler"
 	"github.com/coredhcp/coredhcp/logger"
 	"github.com/coredhcp/coredhcp/plugins"
@@ -92,13 +91,11 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		return nil, true
 	}
 
-	printer.VerboseRequest(req, log, printer.IPv4)
-	defer printer.VerboseResponse(req, resp, log, printer.IPv4)
-
 	mac := req.ClientHWAddr
 	clientIP := req.ClientIPAddr
 	requestedIP := dhcpv4.GetIP(dhcpv4.OptionRequestedIPAddress, req.Options)
 	giaddr := req.GatewayIPAddr
+	log.Debugf("→ %s mac=%s giaddr=%s ciaddr=%s", req.MessageType(), mac, giaddr, clientIP)
 
 	// poolHint selects which subnet pool to allocate from.
 	// allocHint + exactIP control whether a specific address is honored.
@@ -178,6 +175,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, leaseTime); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 	}
+	log.Debugf("← OFFER mac=%s yiaddr=%s", mac, leaseIP)
 
 	return resp, false
 }
