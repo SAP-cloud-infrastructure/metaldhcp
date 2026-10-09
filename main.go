@@ -26,6 +26,7 @@ import (
 	k8sclientset "k8s.io/client-go/kubernetes"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/kubernetes"
@@ -126,6 +127,8 @@ func shouldSetupKubeClient(cfg *config.Config) bool {
 
 // setupEventRecorder creates a Kubernetes event recorder backed by the live API and wires
 // it into the oob plugin. POD_NAME and POD_NAMESPACE must be set via the Downward API.
+// The recorder uses in-cluster config so events land on the a-cluster where the pod runs,
+// not on the remote m-cluster kubeconfig used for DHCPLease/OOBSubnet operations.
 func setupEventRecorder() {
 	podName := os.Getenv("POD_NAME")
 	podNamespace := os.Getenv("POD_NAMESPACE")
@@ -134,7 +137,13 @@ func setupEventRecorder() {
 		return
 	}
 
-	cs, err := k8sclientset.NewForConfig(kubernetes.GetConfig())
+	inClusterCfg, err := rest.InClusterConfig()
+	if err != nil {
+		log.Warningf("Failed to get in-cluster config for event recorder: %v", err)
+		return
+	}
+
+	cs, err := k8sclientset.NewForConfig(inClusterCfg)
 	if err != nil {
 		log.Warningf("Failed to create k8s clientset for event recorder: %v", err)
 		return
