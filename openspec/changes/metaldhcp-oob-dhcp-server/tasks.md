@@ -130,13 +130,13 @@ Add optional hardware vendor enrichment using the embedded IEEE OUI database
 (`github.com/endobit/oui`). The lookup is a pure in-memory map operation (no
 network, no latency) so it is safe in the DHCP hot path.
 
-- [ ] 18.1 Add `github.com/endobit/oui` dependency; gate enrichment behind an
+- [x] 18.1 Add `github.com/endobit/oui` dependency; gate enrichment behind an
   `--vendor-lookup` flag (default off) so the ~500 KB embedded database is opt-in
-- [ ] 18.2 In `handler4`, look up the vendor from the client MAC and attach it to
+- [x] 18.2 In `handler4`, look up the vendor from the client MAC and attach it to
   the compact debug log line (e.g. `→ DISCOVER mac=aa:bb:cc:dd:ee:01 (Dell) giaddr=…`)
-- [ ] 18.3 Include the vendor string in Kubernetes Warning event messages
+- [x] 18.3 Include the vendor string in Kubernetes Warning event messages
   (`NoPoolFound`, `PoolExhausted`) to ease triage
-- [ ] 18.4 Optionally store the vendor in a `DHCPLease` annotation
+- [x] 18.4 Optionally store the vendor in a `DHCPLease` annotation
   (`dhcp.metal.ironcore.dev/vendor`) so downstream operators have it without a
   separate lookup; document that the value reflects the OUI at the time of lease
   creation and may become stale if the database is not kept up to date

@@ -61,6 +61,11 @@ raw TFTP fetch of `snponly.efi` from the tftpd sidecar, and a DISCOVER that asse
 option 54 (server identifier) equals the LoadBalancer VIP. It prints the resulting
 `DHCPLease` table after the DHCP scenarios.
 
+The scapy scenarios use OUIs from real server vendors (Dell, HPE, Lenovo) so the
+`VENDOR` column is populated in `kubectl get dhcpleases -o wide`. The MAC prefixes are
+defined as variables at the top of the script; change `DELL_PREFIX` / `HPE_PREFIX` /
+`LENOVO_PREFIX` to use different OUI prefixes without touching the scenario logic.
+
 For the relay path, the metaldhcp logs should show:
 
 ```

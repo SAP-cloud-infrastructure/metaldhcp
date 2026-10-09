@@ -88,6 +88,7 @@ func main() {
 		}
 		setupEventRecorder()
 	}
+	oob.EnableVendorLookup()
 
 	go func() {
 		mux := http.NewServeMux()

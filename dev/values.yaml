@@ -37,7 +37,7 @@ oob:
       leaseTime: 1h
       # bootURL: https://boot-operator-remote.example.com/boot
   staticLeases:
-    - mac: "02:aa:bb:cc:dd:03"
+    - mac: "10:c5:95:00:11:03"
       ip: 192.168.100.200
       hostname: node-direct-static
 

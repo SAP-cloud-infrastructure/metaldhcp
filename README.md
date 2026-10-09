@@ -13,6 +13,7 @@ The `oob` plugin handles IPv4 address allocation (DHCPv4 `server4`) and lease pe
 - **Per-pool boot URL** — each pool can declare a `bootURL`. When set, the server returns it as DHCP option 67 (`BootFileName`) for UEFI HTTP boot or iPXE chain-loading.
 - **Static leases** — `staticLeases:` in the config binds a MAC address to a fixed IP and optional hostname, bypassing pool allocation entirely.
 - For each successful allocation the plugin writes a `DHCPLease` CR into the configured namespace, recording the MAC-to-IP binding, lease expiry, and hostname.
+- **MAC vendor lookup** — the server resolves the IEEE OUI prefix of each client MAC to a vendor name (e.g. "Dell", "Hewlett Packard Enterprise", "Lenovo") using an embedded ~500 KB OUI database. The vendor is logged on every DISCOVER, included in Kubernetes Warning events, and stored in the `dhcp.metal.ironcore.dev/vendor` annotation on the `DHCPLease` CR. Visible as the `VENDOR` column in `kubectl get dhcpleases -o wide`.
 
 The in-process allocator is seeded from existing `DHCPLease` CRs on startup, so no external IPAM backend is required.
 
@@ -23,7 +24,7 @@ Both resources belong to API group `dhcp.metal.ironcore.dev`, version `v1alpha1`
 | Kind | Description |
 |------|-------------|
 | `OOBSubnet` | Represents an address pool (CIDR, range, gateway, lease time, optional bootURL). |
-| `DHCPLease` | Records an active MAC-to-IP binding (MAC, hostname, IP, gateway, lease time, client ID) created by the oob plugin. |
+| `DHCPLease` | Records an active MAC-to-IP binding (MAC, hostname, IP, gateway, lease time, client ID, optional vendor). Created by the oob plugin; `kubectl get dhcpleases -o wide` shows the `VENDOR` column. |
 
 CRD manifests are in `config/crd/bases/`.
 
