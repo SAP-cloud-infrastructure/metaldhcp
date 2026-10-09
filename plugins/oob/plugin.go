@@ -117,7 +117,12 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if vendorLookup {
 		vendor = ouipkg.VendorFromMAC(mac)
 	}
-	log.Debugf("→ %s mac=%s%s giaddr=%s ciaddr=%s", req.MessageType(), mac, vendorTag(vendor), giaddr, clientIP)
+	classID := req.ClassIdentifier()
+	var classTag string
+	if classID != "" {
+		classTag = " class=" + classID
+	}
+	log.Infof("→ %s mac=%s%s%s giaddr=%s ciaddr=%s", req.MessageType(), mac, vendorTag(vendor), classTag, giaddr, clientIP)
 
 	// poolHint selects which subnet pool to allocate from.
 	// allocHint + exactIP control whether a specific address is honored.
@@ -171,7 +176,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		var err error
 		leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
 		if err != nil {
-			log.Errorf("Could not allocate IP: %s", err)
+			log.Infof("← DROP %s mac=%s%s: %s", req.MessageType(), mac, vendorTag(vendor), err)
 			k.emitEvent(mac, giaddr, vendor, err)
 			return nil, true
 		}
@@ -188,17 +193,36 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if gw := net.ParseIP(gateway); gw != nil {
 		resp.Options.Update(dhcpv4.OptRouter(gw))
 	}
-	if bootURL != "" {
-		resp.BootFileName = bootURL
-	}
 	if hostname != "" {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
 	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 	}
-	log.Debugf("← OFFER mac=%s yiaddr=%s", mac, leaseIP)
 
+	// iPXE phase 2: snponly.efi sends option 175 (iPXE encapsulated options) —
+	// this is the reliable iPXE marker. option 60 stays "PXEClient:Arch:00007:UNDI:003010"
+	// so checking classIdentifier for "iPXE" does not work. Respond with the
+	// boot-operator chain URL using the iPXE ${uuid} template variable (substituted
+	// client-side by iPXE from its SMBIOS UUID) and stop the chain so nbp cannot
+	// overwrite option 67 with the TFTP filename, which would cause an infinite boot loop.
+	if len(req.Options.Get(dhcpv4.GenericOptionCode(175))) > 0 {
+		if bootURL != "" {
+			chainURL := bootURL + "/ipxe/${uuid}"
+			resp.BootFileName = chainURL
+			resp.Options.Update(dhcpv4.OptBootFileName(chainURL))
+			log.Infof("← OFFER %s mac=%s yiaddr=%s chainURL=%q (iPXE phase)", req.MessageType(), mac, leaseIP, chainURL)
+		} else {
+			log.Infof("← OFFER %s mac=%s yiaddr=%s (iPXE phase, no bootURL)", req.MessageType(), mac, leaseIP)
+		}
+		return resp, true // stop chain; nbp must not run for iPXE phase
+	}
+
+	// Phase 1 (PXEClient) or plain DHCP: nbp handles TFTP options downstream.
+	if bootURL != "" {
+		resp.BootFileName = bootURL
+	}
+	log.Infof("← OFFER %s mac=%s yiaddr=%s bootURL=%q", req.MessageType(), mac, leaseIP, bootURL)
 	return resp, false
 }
 

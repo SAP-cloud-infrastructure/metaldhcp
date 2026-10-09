@@ -77,6 +77,18 @@ func discoverRelay(mac net.HardwareAddr, giaddr net.IP) (*dhcpv4.DHCPv4, *dhcpv4
 	return req, resp
 }
 
+// discoverIPXE builds a phase-2 iPXE DISCOVER: option 175 present (iPXE encapsulated options marker).
+func discoverIPXE(mac net.HardwareAddr, giaddr net.IP) (*dhcpv4.DHCPv4, *dhcpv4.DHCPv4) {
+	req, err := dhcpv4.NewDiscovery(mac)
+	Expect(err).NotTo(HaveOccurred())
+	req.GatewayIPAddr = giaddr
+	// option 175 is the reliable iPXE marker; option 60 stays "PXEClient:Arch:00007:UNDI:003010"
+	req.Options.Update(dhcpv4.Option{Code: dhcpv4.GenericOptionCode(175), Value: dhcpv4.OptionGeneric{Data: []byte{0x01}}})
+	resp, err := dhcpv4.NewReplyFromRequest(req)
+	Expect(err).NotTo(HaveOccurred())
+	return req, resp
+}
+
 // deferDeleteLease schedules deletion of the DHCPLease for mac after the current spec.
 func deferDeleteLease(mac net.HardwareAddr) {
 	DeferCleanup(func(ctx SpecContext) {
@@ -423,5 +435,45 @@ var _ = Describe("OOB plugin handler4", func() {
 		Eventually(ctx, Object(lease)).Should(
 			HaveField("Annotations", Not(HaveKey("dhcp.metal.ironcore.dev/vendor"))),
 		)
+	})
+
+	It("sets chain URL with ${uuid} template for iPXE phase 2 and stops the chain", func(ctx SpecContext) {
+		const (
+			cidr    = "10.20.0.0/24"
+			bootURL = "https://boot-operator.example.com"
+		)
+
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.20.0.1", BootURL: bootURL}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+
+		req, resp := discoverIPXE(mac, net.ParseIP("10.20.0.1"))
+
+		out, stop := h(req, resp)
+		Expect(stop).To(BeTrue(), "chain must stop so nbp cannot overwrite option 67")
+		Expect(out).NotTo(BeNil())
+		Expect(out.BootFileName).To(Equal("https://boot-operator.example.com/ipxe/${uuid}"))
+		Expect(out.Options.Get(dhcpv4.OptionBootfileName)).To(Equal([]byte("https://boot-operator.example.com/ipxe/${uuid}")))
+	})
+
+	It("stops chain for iPXE phase 2 even when bootURL is empty", func(ctx SpecContext) {
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{CIDR: "10.22.0.0/24", Gateway: "10.22.0.1"}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+
+		req, resp := discoverIPXE(mac, net.ParseIP("10.22.0.1"))
+
+		out, stop := h(req, resp)
+		Expect(stop).To(BeTrue(), "chain must stop for iPXE phase even without bootURL")
+		Expect(out).NotTo(BeNil())
+		Expect(out.BootFileName).To(BeEmpty())
 	})
 })
