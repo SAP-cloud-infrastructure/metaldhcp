@@ -8,7 +8,7 @@ ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -
 all: build
 
 build: ## Build the metaldhcp binary.
-	go build -o bin/metaldhcp .
+	CGO_ENABLED=0 go build -o bin/metaldhcp .
 
 clean: ## Remove built binary.
 	rm -f bin/metaldhcp
@@ -25,15 +25,9 @@ docker-push: ## Push docker image.
 fmt: goimports ## Run goimports against code.
 	$(GOIMPORTS) -w .
 
-UNAME_S := $(shell uname -s)
-
 .PHONY: vet
 vet: ## Run go vet against code.
-ifeq ($(UNAME_S),Darwin)
-	@echo "NOTE: skipping go vet on macOS — coredhcp/server uses sendEthernet (Linux-only); run in container for full vet"
-else
 	go vet ./...
-endif
 
 .PHONY: help
 help: ## Display this help.
@@ -68,11 +62,7 @@ docs: crd-ref-docs ## Generate CRD API reference docs.
 
 .PHONY: test
 test: generate manifests fmt vet envtest ## Run tests.
-ifeq ($(UNAME_S),Darwin)
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/... ./api/... ./plugins/... -coverprofile cover.out
-else
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
-endif
 
 ##@ Dev environment
 
