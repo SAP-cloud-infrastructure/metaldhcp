@@ -13,8 +13,12 @@ namespace: metaldhcp-system
 # Set to false when the namespace is managed externally.
 createNamespace: true
 
-# externalIP is assigned to the LoadBalancer Service and used as the DHCP server ID.
-# DHCP relay agents must be configured to forward to this address.
+# externalIP is the LoadBalancer VIP assigned to the Service. It is used as:
+#   - DHCP option 54 (Server Identifier): clients unicast RENEW/REBIND to this address.
+#     If set to the pod IP instead, renewals bypass the LoadBalancer and break on pod restart.
+#   - siaddr (BOOTP header): next-server field, used by some PXE clients for TFTP.
+#   - TFTP server name (option 66) when tftp.enabled.
+# DHCP relay agents must also be configured to forward to this address.
 externalIP: ""
 
 server:
