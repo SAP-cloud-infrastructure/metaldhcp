@@ -36,9 +36,11 @@ make manifests    # regenerate CRD manifests
 make test         # generate + manifests + fmt + vet + envtest
 ```
 
-> **macOS note**: `coredhcp/server` references a Linux-only `sendEthernet` function. `make vet`
-> and the main-package build are skipped automatically on Darwin. Use the container image or a
-> Linux environment for full validation.
+> **macOS note**: `coredhcp/server` references a Linux-only `sendEthernet` function.
+> A temporary `replace` directive in `go.mod` points at `github.com/damyan/coredhcp`,
+> which adds a `sendEthernet_darwin.go` stub so the package compiles on macOS.
+> Actual DHCP serving still requires Linux. The replace will be removed once a fix
+> is merged upstream.
 
 ## Run
 
@@ -93,6 +95,22 @@ staticLeases:
 ```
 
 Static leases always return the configured IP regardless of pool or relay hint. The hostname is recorded in the resulting `DHCPLease` CR.
+
+## TFTP / PXE boot
+
+When `tftp.enabled` is set in the Helm values, a `tftpd` sidecar runs in the same Pod
+as metaldhcp. Because the Pod uses `hostNetwork: true`, both containers share the same
+IP, so the DHCP server IP doubles as the TFTP server address. The `nbp` plugin injects
+DHCP options 66 (TFTP server name) and 67 (bootfile name) into every response.
+
+The iPXE binary (`snponly.efi`, UEFI network-boot only) is compiled from source during
+the Docker build with `DOWNLOAD_PROTO_HTTPS` enabled and DigiCert root CAs embedded,
+so it can fetch the boot image over HTTPS from boot-operator. It is baked into the
+image at `/ipxe/snponly.efi`. Set `tftp.ipxeURL` to download a different binary at
+Pod startup instead.
+
+**Firewall requirement**: UDP/69 must be permitted from the OOB subnet to the
+LoadBalancer IP. This is a deployment prerequisite and is not enforced by the chart.
 
 ## Downstream
 
