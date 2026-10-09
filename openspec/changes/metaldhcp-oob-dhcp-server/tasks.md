@@ -106,12 +106,15 @@ coredhcp responds with the pod IP as the DHCP server identifier (option 54 /
 resolves to the pod IP (not the LoadBalancer VIP) renewals bypass the LB and break
 when the pod restarts or moves. Observed during qa-de-8 buildup (helm-charts #12235).
 
-- [ ] 16.1 Add a `server.externalIP` value (reuse the existing `externalIP` value if
+- [x] 16.1 Add a `server.externalIP` value (reuse the existing `externalIP` value if
   appropriate) and pass it into the coredhcp `serverid` plugin config and as the
   `siaddr` field in OFFER/ACK responses
-- [ ] 16.2 Verify with a test DISCOVER that the OFFER carries option 54 equal to the
+  → `externalIP` already wired to `server_id` plugin which sets both option 54 and
+  `resp.ServerIPAddr` (siaddr); comment in values.yaml explains the LB VIP requirement
+- [x] 16.2 Verify with a test DISCOVER that the OFFER carries option 54 equal to the
   configured external IP, not the pod IP
-- [ ] 16.3 Update `example/oob.yaml` and the Helm chart values with a comment
+  → dev/test-dhcp.sh scenario 7 uses scapy srp to capture the OFFER and assert option 54
+- [x] 16.3 Update `example/oob.yaml` and the Helm chart values with a comment
   explaining why this must match the LoadBalancer IP
 
 ## 18. MAC vendor lookup

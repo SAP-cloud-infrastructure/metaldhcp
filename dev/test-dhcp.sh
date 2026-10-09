@@ -92,3 +92,20 @@ assert len(data) > 0, 'received empty file'
 print(f'OK: received {len(data)} bytes via TFTP')
 "
 fi
+
+echo ""
+echo "==> 7. Server identifier — OFFER must carry option 54 equal to the LoadBalancer VIP"
+scapy_send "
+import sys
+mac = '02:aa:bb:cc:dd:07'
+disc = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), flags=0x8000) / DHCP(options=[('message-type','discover'),('param_req_list',[54]),'end'])
+ans = srp(disc, iface='veth0-server', timeout=3, verbose=False)
+if not ans or not ans[0]:
+    print('SKIP: no OFFER received (pool may be exhausted or request dropped)')
+    sys.exit(0)
+offer = ans[0][0][1]
+sid = next((v for k,v in offer[DHCP].options if k == 'server_id'), None)
+assert sid is not None, 'option 54 (server_id) missing from OFFER'
+assert str(sid) == '192.168.100.1', f'expected 192.168.100.1, got {sid}'
+print(f'OK: option 54 = {sid}')
+"

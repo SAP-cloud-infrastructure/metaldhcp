@@ -56,9 +56,10 @@ make test-dhcp   # or ./dev/test-dhcp.sh
 ```
 
 This sends: a direct udhcpc request, two scapy packets with `giaddr` set (one per pool),
-a static-lease request, an unmatched relay (expects a `NoPoolFound` Warning event), and a
-raw TFTP fetch of `snponly.efi` from the tftpd sidecar. It prints the resulting `DHCPLease`
-table after the DHCP scenarios.
+a static-lease request, an unmatched relay (expects a `NoPoolFound` Warning event), a
+raw TFTP fetch of `snponly.efi` from the tftpd sidecar, and a DISCOVER that asserts
+option 54 (server identifier) equals the LoadBalancer VIP. It prints the resulting
+`DHCPLease` table after the DHCP scenarios.
 
 For the relay path, the metaldhcp logs should show:
 
