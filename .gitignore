@@ -1,5 +1,6 @@
 # Binaries
 /metaldhcp
+/tftpd
 /bin/
 
 # Test / coverage output

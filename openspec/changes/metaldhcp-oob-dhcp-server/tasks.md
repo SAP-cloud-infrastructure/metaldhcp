@@ -80,9 +80,57 @@
 - [x] 14.2 In `handler4`, emit a `Warning` event on the metaldhcp Pod for each DISCOVER/REQUEST that cannot be served: no pool found (`NoPoolFound`), pool exhausted (`PoolExhausted`), allocation error (`AllocationFailed`); include MAC and giaddr in the message
 - [x] 14.3 Add envtest case: DISCOVER with unknown giaddr → Warning event emitted on Pod with reason `NoPoolFound`
 
-## 15. DNS propagation
+## 15. TFTP server for iPXE binary delivery
 
-- [ ] 15.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
-- [ ] 15.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
-- [ ] 15.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
-- [ ] 15.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed
+BIOS PXE boot fetches the iPXE binary via TFTP before it can chainload HTTP boot.
+metaldhcp must serve (or proxy) TFTP so the full PXE boot chain works without a
+separate dnsmasq instance. UDP/69 from the OOB subnet to the DHCP server IP must
+be permitted in the network firewall (a deployment prerequisite, not a code task).
+
+- [ ] 15.1 Evaluate integration options: coredhcp TFTP plugin (serves files from a
+  ConfigMap-mounted directory) vs. dedicated TFTP sidecar container in the Pod
+- [ ] 15.2 Implement chosen approach; wire the iPXE binary path via a Helm value
+  (`tftp.enabled`, `tftp.rootDir` or equivalent)
+- [ ] 15.3 Add the TFTP port (UDP/69) to the Service and, where applicable, to the
+  LoadBalancer annotation so the port is reachable from the OOB subnet
+- [ ] 15.4 Update the Helm chart README / deployment notes with the required firewall
+  rule: allow UDP/69 from the OOB /26 (or site-specific) subnet to the LoadBalancer IP
+
+## 16. DHCP option 54 (server identifier) set to LoadBalancer VIP
+
+coredhcp responds with the pod IP as the DHCP server identifier (option 54 /
+`siaddr`). Clients use this address for unicast RENEW and REQUEST messages; if it
+resolves to the pod IP (not the LoadBalancer VIP) renewals bypass the LB and break
+when the pod restarts or moves. Observed during qa-de-8 buildup (helm-charts #12235).
+
+- [ ] 16.1 Add a `server.externalIP` value (reuse the existing `externalIP` value if
+  appropriate) and pass it into the coredhcp `serverid` plugin config and as the
+  `siaddr` field in OFFER/ACK responses
+- [ ] 16.2 Verify with a test DISCOVER that the OFFER carries option 54 equal to the
+  configured external IP, not the pod IP
+- [ ] 16.3 Update `example/oob.yaml` and the Helm chart values with a comment
+  explaining why this must match the LoadBalancer IP
+
+## 18. MAC vendor lookup
+
+Add optional hardware vendor enrichment using the embedded IEEE OUI database
+(`github.com/endobit/oui`). The lookup is a pure in-memory map operation (no
+network, no latency) so it is safe in the DHCP hot path.
+
+- [ ] 18.1 Add `github.com/endobit/oui` dependency; gate enrichment behind an
+  `--vendor-lookup` flag (default off) so the ~500 KB embedded database is opt-in
+- [ ] 18.2 In `handler4`, look up the vendor from the client MAC and attach it to
+  the compact debug log line (e.g. `→ DISCOVER mac=aa:bb:cc:dd:ee:01 (Dell) giaddr=…`)
+- [ ] 18.3 Include the vendor string in Kubernetes Warning event messages
+  (`NoPoolFound`, `PoolExhausted`) to ease triage
+- [ ] 18.4 Optionally store the vendor in a `DHCPLease` annotation
+  (`dhcp.metal.ironcore.dev/vendor`) so downstream operators have it without a
+  separate lookup; document that the value reflects the OUI at the time of lease
+  creation and may become stale if the database is not kept up to date
+
+## 17. DNS propagation
+
+- [ ] 17.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
+- [ ] 17.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
+- [ ] 17.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
+- [ ] 17.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed
