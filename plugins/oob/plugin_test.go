@@ -77,18 +77,27 @@ func discoverRelay(mac net.HardwareAddr, giaddr net.IP) (*dhcpv4.DHCPv4, *dhcpv4
 	return req, resp
 }
 
+// deferDeleteLease schedules deletion of the DHCPLease for mac after the current spec.
+func deferDeleteLease(mac net.HardwareAddr) {
+	DeferCleanup(func(ctx SpecContext) {
+		lease := &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+		}
+		_ = crClient.Delete(ctx, lease)
+	})
+}
+
 var _ = Describe("OOB plugin handler4", func() {
 	It("allocates from a config-defined pool and records a DHCPLease", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const cidr = "192.168.42.0/24"
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "192.168.42.1"}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "192.168.42.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 		req, resp := discover(mac, net.ParseIP("192.168.42.10"))
 
 		out, drop := h(req, resp)
@@ -97,7 +106,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(contains(cidr, out.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must be within %s", out.YourIPAddr, cidr)
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
@@ -106,14 +115,12 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("allocates from a labeled OOBSubnet CR and records a DHCPLease", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const cidr = "192.168.43.0/24"
 
 		subnet := &metaldhcpv1alpha1.OOBSubnet{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "subnet-a",
-				Namespace: ns.Name,
-				Labels:    map[string]string{"oob": "true"},
+				Name:   "subnet-a",
+				Labels: map[string]string{"oob": "true"},
 			},
 			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "192.168.43.1"},
 		}
@@ -121,12 +128,12 @@ var _ = Describe("OOB plugin handler4", func() {
 		DeferCleanup(crClient.Delete, subnet)
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace:    ns.Name,
 			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 		req, resp := discover(mac, net.ParseIP("192.168.43.10"))
 
 		out, drop := h(req, resp)
@@ -135,7 +142,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(contains(cidr, out.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must be within %s", out.YourIPAddr, cidr)
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
@@ -144,16 +151,15 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("returns the same IP on re-lease and patches the single DHCPLease", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const cidr = "192.168.44.0/24"
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "192.168.44.1"}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "192.168.44.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 
 		req1, resp1 := discover(mac, net.ParseIP("192.168.44.10"))
 		out1, drop1 := h(req1, resp1)
@@ -162,7 +168,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		firstIP := out1.YourIPAddr.String()
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 		}
 		Eventually(Object(lease)).Should(HaveField("Spec.IP", firstIP))
 
@@ -173,16 +179,14 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out2.YourIPAddr.String()).To(Equal(firstIP), "re-lease must return the same IP")
 
 		list := &metaldhcpv1alpha1.DHCPLeaseList{}
-		Eventually(ObjectList(list, client.InNamespace(ns.Name))).Should(HaveField("Items", HaveLen(1)))
+		Eventually(ObjectList(list)).Should(HaveField("Items", HaveLen(1)))
 	})
 
 	It("allocates from the correct pool when giaddr is set (relay)", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const cidr1 = "10.0.1.0/24"
 		const cidr2 = "10.0.2.0/24"
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
 			Subnets: []api.Subnet{
 				{CIDR: cidr1, Gateway: "10.0.1.1"},
 				{CIDR: cidr2, Gateway: "10.0.2.1"},
@@ -191,6 +195,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 
 		// Relay for the second subnet: giaddr is in cidr2.
 		req, resp := discoverRelay(mac, net.ParseIP("10.0.2.1"))
@@ -204,7 +209,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			"YourIPAddr must not be in the non-relay subnet %s", cidr1)
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
@@ -213,11 +218,8 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("drops the request when no pool CIDR matches the hint", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
-
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
+			Subnets: []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -230,12 +232,9 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("drops the request when the matching pool is exhausted", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
-
 		// A /31 has no usable host addresses, so allocation always fails.
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: "10.0.0.0/31"}},
+			Subnets: []api.Subnet{{CIDR: "10.0.0.0/31"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -248,19 +247,18 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("sets BootFileName from pool bootURL when present", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const (
 			cidr    = "10.1.1.0/24"
 			bootURL = "https://boot-operator.example.com/boot"
 		)
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 		req, resp := discover(mac, net.ParseIP("10.1.1.1"))
 
 		out, drop := h(req, resp)
@@ -270,15 +268,13 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("leaves BootFileName empty when pool has no bootURL", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
-
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1"}},
+			Subnets: []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 		req, resp := discover(mac, net.ParseIP("10.2.2.1"))
 
 		out, drop := h(req, resp)
@@ -288,7 +284,6 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("returns the static IP for a configured MAC regardless of pool hint", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const (
 			cidr     = "10.3.3.0/24"
 			staticIP = "10.3.3.55"
@@ -296,8 +291,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		)
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1"}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1"}},
 			StaticLeases: []api.StaticLease{
 				{MAC: dellMAC, IP: staticIP, Hostname: staticHN},
 			},
@@ -305,6 +299,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 
 		// send with no pool hint — should still get the static IP
 		req, resp := discover(mac, nil)
@@ -315,7 +310,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// DHCPLease should record the hostname
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 		}
 		Eventually(ctx, Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.IP", staticIP),
@@ -347,8 +342,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		DeferCleanup(func() { SetRecorder(nil, nil) })
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
+			Subnets: []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -370,15 +364,13 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("stores vendor annotation on DHCPLease when vendor-lookup is enabled", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const cidr = "10.10.10.0/24"
 
 		vendorLookup = true
 		DeferCleanup(func() { vendorLookup = false })
 
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.10.10.1"}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.10.10.1"}},
 		})
 
 		for _, tc := range []struct {
@@ -391,6 +383,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		} {
 			mac, err := net.ParseMAC(tc.mac)
 			Expect(err).NotTo(HaveOccurred())
+			deferDeleteLease(mac)
 			req, resp := discover(mac, net.ParseIP("10.10.10.1"))
 
 			out, drop := h(req, resp)
@@ -398,7 +391,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Expect(out).NotTo(BeNil())
 
 			lease := &metaldhcpv1alpha1.DHCPLease{
-				ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+				ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 			}
 			Eventually(ctx, Object(lease)).Should(
 				HaveField("Annotations", HaveKeyWithValue("dhcp.metal.ironcore.dev/vendor", tc.vendor)),
@@ -408,17 +401,16 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 
 	It("does not store vendor annotation when vendor-lookup is disabled", func(ctx SpecContext) {
-		ns := newNamespace(ctx)
 		const cidr = "10.10.11.0/24"
 
 		// vendorLookup defaults false; confirm no annotation written
 		h := buildPlugin(api.OOBConfig{
-			Namespace: ns.Name,
-			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.10.11.1"}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.10.11.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
 		req, resp := discover(mac, net.ParseIP("10.10.11.1"))
 
 		out, drop := h(req, resp)
@@ -426,7 +418,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out).NotTo(BeNil())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
 		}
 		Eventually(ctx, Object(lease)).Should(
 			HaveField("Annotations", Not(HaveKey("dhcp.metal.ironcore.dev/vendor"))),

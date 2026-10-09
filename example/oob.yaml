@@ -1,6 +1,3 @@
-# Namespace where DHCPLease objects are written and OOBSubnet CRs are read from.
-namespace: metaldhcp-system
-
 # subnetLabels selects OOBSubnet CRs to use as address pools.
 # Ignored when subnets is non-empty (see below).
 subnetLabels:

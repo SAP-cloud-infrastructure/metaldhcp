@@ -30,9 +30,6 @@ server:
 
 # oob plugin configuration — maps directly to the oob.yaml config file.
 oob:
-  # Namespace where DHCPLease CRs are written and OOBSubnet CRs are read from.
-  namespace: metaldhcp-system
-
   # subnetLabels selects OOBSubnet CRs as pools. Ignored when subnets is non-empty.
   subnetLabels: []
   # - key: dhcp

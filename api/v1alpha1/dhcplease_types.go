@@ -14,6 +14,7 @@ import (
 // re-leases patch the same object.
 //
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="MAC",type=string,JSONPath=`.spec.macAddress`
 // +kubebuilder:printcolumn:name="Hostname",type=string,JSONPath=`.spec.hostname`
 // +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1

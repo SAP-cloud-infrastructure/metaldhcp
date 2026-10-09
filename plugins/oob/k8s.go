@@ -56,7 +56,6 @@ type staticEntry struct {
 
 type K8sClient struct {
 	Client       client.Client
-	Namespace    string
 	SubnetLabels []api.SubnetLabel
 	configPools  []allocator.Pool
 	alloc        *allocator.Allocator
@@ -66,7 +65,6 @@ type K8sClient struct {
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 	k := &K8sClient{
 		Client:       kubernetes.GetClient(),
-		Namespace:    cfg.Namespace,
 		SubnetLabels: cfg.SubnetLabels,
 		configPools:  configPools(cfg.Subnets),
 		alloc:        allocator.New(),
@@ -142,7 +140,7 @@ func (k *K8sClient) lookupStaticLease(macKey string) (staticEntry, bool) {
 // re-leases survive a server restart.
 func (k *K8sClient) seedFromLeases(ctx context.Context) error {
 	leases := &metaldhcpv1alpha1.DHCPLeaseList{}
-	if err := k.Client.List(ctx, leases, client.InNamespace(k.Namespace)); err != nil {
+	if err := k.Client.List(ctx, leases); err != nil {
 		return err
 	}
 	for _, l := range leases.Items {
@@ -192,7 +190,7 @@ func (k *K8sClient) selectPool(ctx context.Context, ipaddr net.IP) (*allocator.P
 		pools = crPools
 	}
 	if len(pools) == 0 {
-		return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("no pools configured and no OOBSubnet found in %s", k.Namespace)}
+		return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("no pools configured and no OOBSubnets found")}
 	}
 
 	if ipaddr == nil || ipaddr.IsUnspecified() {
@@ -217,7 +215,7 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 	}
 
 	list := &metaldhcpv1alpha1.OOBSubnetList{}
-	if err := k.Client.List(ctx, list, client.InNamespace(k.Namespace), client.MatchingLabels(labels)); err != nil {
+	if err := k.Client.List(ctx, list, client.MatchingLabels(labels)); err != nil {
 		return nil, fmt.Errorf("failed to list OOBSubnets: %w", err)
 	}
 
@@ -263,8 +261,7 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 	newLease := func() *metaldhcpv1alpha1.DHCPLease {
 		return &metaldhcpv1alpha1.DHCPLease{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      helper.NormalizeMAC(mac),
-				Namespace: k.Namespace,
+				Name: helper.NormalizeMAC(mac),
 			},
 		}
 	}
@@ -285,7 +282,7 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 		return err
 	}
 
-	log.Infof("DHCPLease %s/%s %s (MAC %s, IP %s)", k.Namespace, lease.Name, result, mac, ip)
+	log.Infof("DHCPLease %s %s (MAC %s, IP %s)", lease.Name, result, mac, ip)
 	return nil
 }
 

@@ -12,7 +12,7 @@ spec:
     listKind: DHCPLeaseList
     plural: dhcpleases
     singular: dhcplease
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.macAddress

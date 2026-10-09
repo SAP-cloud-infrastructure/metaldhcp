@@ -26,9 +26,6 @@ type Subnet struct {
 }
 
 type OOBConfig struct {
-	// Namespace is used both to read pools (OOBSubnet CRs) and to write DHCPLease objects.
-	Namespace string `yaml:"namespace"`
-
 	// SubnetLabels selects which OOBSubnet CRs count as pools. Ignored when Subnets is set.
 	SubnetLabels []SubnetLabel `yaml:"subnetLabels"`
 

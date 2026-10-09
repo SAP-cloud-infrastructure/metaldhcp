@@ -12,7 +12,7 @@ spec:
     listKind: OOBSubnetList
     plural: oobsubnets
     singular: oobsubnet
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.cidr

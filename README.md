@@ -12,14 +12,14 @@ The `oob` plugin handles IPv4 address allocation (DHCPv4 `server4`) and lease pe
 - **DHCP relay (giaddr)** — when a request arrives via a relay agent (non-zero `giaddr`), the plugin uses `giaddr` for pool selection. Exact-IP assignment within the pool still uses `clientIP`/`requestedIP`.
 - **Per-pool boot URL** — each pool can declare a `bootURL`. When set, the server returns it as DHCP option 67 (`BootFileName`) for UEFI HTTP boot or iPXE chain-loading.
 - **Static leases** — `staticLeases:` in the config binds a MAC address to a fixed IP and optional hostname, bypassing pool allocation entirely.
-- For each successful allocation the plugin writes a `DHCPLease` CR into the configured namespace, recording the MAC-to-IP binding, lease expiry, and hostname.
+- For each successful allocation the plugin writes a `DHCPLease` CR, recording the MAC-to-IP binding, lease expiry, and hostname.
 - **MAC vendor lookup** — the server resolves the IEEE OUI prefix of each client MAC to a vendor name (e.g. "Dell", "Hewlett Packard Enterprise", "Lenovo") using an embedded ~500 KB OUI database. The vendor is logged on every DISCOVER, included in Kubernetes Warning events, and stored in the `dhcp.metal.ironcore.dev/vendor` annotation on the `DHCPLease` CR. Visible as the `VENDOR` column in `kubectl get dhcpleases -o wide`.
 
 The in-process allocator is seeded from existing `DHCPLease` CRs on startup, so no external IPAM backend is required.
 
 ## CRDs
 
-Both resources belong to API group `dhcp.metal.ironcore.dev`, version `v1alpha1`:
+Both resources belong to API group `dhcp.metal.ironcore.dev`, version `v1alpha1`, and are cluster-scoped (like `Node` and `PersistentVolume`):
 
 | Kind | Description |
 |------|-------------|
@@ -68,8 +68,6 @@ A kubeconfig or in-cluster service account is required when the `oob` plugin is 
 
 ```yaml
 # example/oob.yaml
-
-namespace: metaldhcp-system
 
 # OOBSubnet CR label selector — used when subnets: is empty
 subnetLabels:

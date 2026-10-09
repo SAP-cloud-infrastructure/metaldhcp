@@ -23,7 +23,6 @@ data:
         - nbp: tftp://{{ required "externalIP is required when tftp.enabled" .Values.externalIP }}/{{ .Values.tftp.nbpFilename }}
         {{- end }}
   oob.yaml: |
-    namespace: {{ .Values.oob.namespace }}
     {{- with .Values.oob.subnetLabels }}
     subnetLabels:
       {{- range . }}
