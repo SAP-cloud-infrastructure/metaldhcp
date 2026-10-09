@@ -9,17 +9,34 @@ metadata:
     {{- include "metaldhcp.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "metaldhcp.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "metaldhcp.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "metaldhcp.fullname" . }}
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
+      initContainers:
+        - name: fetch-ipxe
+          image: busybox:1.37
+          command:
+            - wget
+            - -O
+            - /ipxe/{{ .Values.tftp.nbpFilename }}
+            - {{ .Values.tftp.ipxeURL | quote }}
+          volumeMounts:
+            - name: ipxe-override
+              mountPath: /ipxe
+      {{- end }}
       containers:
         - name: metaldhcp
           image: {{ include "metaldhcp.image" . }}
@@ -80,7 +97,30 @@ spec:
             capabilities:
               add: ["NET_RAW", "NET_ADMIN"]
         {{- end }}
+        {{- if .Values.tftp.enabled }}
+        - name: tftpd
+          image: {{ include "metaldhcp.image" . }}
+          command: ["/tftpd"]
+          args:
+            - --root=/ipxe
+          ports:
+            - name: tftp
+              containerPort: 69
+              protocol: UDP
+          securityContext:
+            capabilities:
+              add: ["NET_BIND_SERVICE"]
+          {{- if .Values.tftp.ipxeURL }}
+          volumeMounts:
+            - name: ipxe-override
+              mountPath: /ipxe
+          {{- end }}
+        {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "metaldhcp.fullname" . }}-config
+        {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
+        - name: ipxe-override
+          emptyDir: {}
+        {{- end }}

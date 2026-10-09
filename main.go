@@ -14,6 +14,7 @@ import (
 	"github.com/coredhcp/coredhcp/plugins"
 	"github.com/coredhcp/coredhcp/plugins/dns"
 	"github.com/coredhcp/coredhcp/plugins/leasetime"
+	"github.com/coredhcp/coredhcp/plugins/nbp"
 	"github.com/coredhcp/coredhcp/plugins/netmask"
 	"github.com/coredhcp/coredhcp/plugins/router"
 	"github.com/coredhcp/coredhcp/plugins/serverid"
@@ -34,6 +35,7 @@ import (
 var desiredPlugins = []*plugins.Plugin{
 	&dns.Plugin,
 	&leasetime.Plugin,
+	&nbp.Plugin,
 	&netmask.Plugin,
 	&router.Plugin,
 	&serverid.Plugin,

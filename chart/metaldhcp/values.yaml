@@ -70,3 +70,17 @@ debug:
   image: nicolaka/netshoot
   serverIP: 192.168.100.1
   serverCIDR: /24
+
+# tftp enables a TFTP sidecar that serves the iPXE binary to PXE-booting clients.
+# The sidecar runs in the same Pod (shared network namespace) so its IP matches the
+# DHCP server IP. snponly.efi (UEFI) is baked into the image at /ipxe/snponly.efi
+# and served without any additional configuration.
+# UDP/69 is added to the Service when enabled.
+tftp:
+  enabled: false
+  # nbpFilename is the filename served over TFTP and advertised in DHCP option 67.
+  nbpFilename: "snponly.efi"
+  # ipxeURL overrides the baked-in binary: when set, an init container downloads the
+  # file from this URL at Pod startup and serves it instead.
+  # Example: https://boot-operator.runtime.qa-de-1/ipxe.efi
+  ipxeURL: ""
