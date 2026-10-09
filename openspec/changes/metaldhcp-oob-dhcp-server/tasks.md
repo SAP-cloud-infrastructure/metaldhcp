@@ -124,7 +124,25 @@ when the pod restarts or moves. Observed during qa-de-8 buildup (helm-charts #12
 - [ ] 17.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
 - [ ] 17.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed
 
-## 18. MAC vendor lookup
+## 19. Cluster-scoped CRDs
+
+`DHCPLease` and `OOBSubnet` represent physical/network infrastructure (MAC-to-IP binding, OOB
+network pool) — the same category as `Server` and `BMC` in the metal stack, which are
+cluster-scoped. Making them cluster-scoped keeps the type system consistent and removes the
+namespace config plumbing from the oob plugin.
+
+- [x] 19.1 Add `+kubebuilder:resource:scope=Cluster` to `DHCPLease` and `OOBSubnet` types; regenerate CRD manifests; verify `make test` passes
+- [x] 19.2 Remove `Namespace` from `OOBConfig` and `K8sClient`; remove `client.InNamespace` from `seedFromLeases` and `oobSubnetPools`; remove namespace from `applyLease` `ObjectMeta`
+- [x] 19.3 Update Helm chart (`oob.namespace` value + configmap template), `dev/values.yaml`, `example/oob.yaml`, and README; update envtest to use `DeferCleanup` for DHCPLease isolation
+
+## 20. Fix Kubernetes event recording in Gardener a-cluster deployments
+
+In Gardener, metaldhcp runs on the a-cluster (the shoot) but its kubeconfig (`KUBECONFIG` env)
+points to the m-cluster for DHCPLease/OOBSubnet operations. Event writes were going through the
+same remote client — the pod namespace (`shoot--cp--*`) doesn't exist on m-cluster, so all
+event creates fail with forbidden.
+
+- [x] 20.1 In `setupEventRecorder`, use `rest.InClusterConfig()` instead of `kubernetes.GetConfig()` so events target the a-cluster (pod's own cluster) where the SA has permission; DHCPLease/OOBSubnet client continues using the remote kubeconfig unchanged
 
 Add optional hardware vendor enrichment using the embedded IEEE OUI database
 (`github.com/endobit/oui`). The lookup is a pure in-memory map operation (no
