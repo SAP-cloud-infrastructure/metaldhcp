@@ -60,6 +60,9 @@ type K8sClient struct {
 	configPools  []allocator.Pool
 	alloc        *allocator.Allocator
 	statics      map[string]staticEntry // normalized MAC key -> static binding
+	dnsServers   []net.IP
+	domain       string
+	ntpServers   []net.IP
 }
 
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
@@ -69,6 +72,17 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 		configPools:  configPools(cfg.Subnets),
 		alloc:        allocator.New(),
 		statics:      make(map[string]staticEntry),
+		domain:       cfg.Domain,
+	}
+	for _, s := range cfg.DNSServers {
+		if ip := net.ParseIP(s); ip != nil {
+			k.dnsServers = append(k.dnsServers, ip)
+		}
+	}
+	for _, s := range cfg.NTPServers {
+		if ip := net.ParseIP(s); ip != nil {
+			k.ntpServers = append(k.ntpServers, ip)
+		}
 	}
 	k.seedStaticLeases(cfg.StaticLeases)
 	if err := k.seedFromLeases(ctx); err != nil {

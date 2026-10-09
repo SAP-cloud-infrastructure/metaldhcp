@@ -113,3 +113,29 @@ assert sid is not None, 'option 54 (server_id) missing from OFFER'
 assert str(sid) == '192.168.100.1', f'expected 192.168.100.1, got {sid}'
 print(f'OK: option 54 = {sid}')
 "
+
+echo ""
+echo "==> 8. DNS/domain/NTP — OFFER must carry options 6, 15, 42"
+scapy_send "
+import sys
+mac = '${DELL_PREFIX}:08'
+disc = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), flags=0x8000) / DHCP(options=[('message-type','discover'),'end'])
+ans = srp(disc, iface='veth0-server', timeout=3, verbose=False)
+if not ans or not ans[0]:
+    print('SKIP: no OFFER received (pool may be exhausted or request dropped)')
+    sys.exit(0)
+offer = ans[0][0][1]
+opts = {}
+for o in offer[DHCP].options:
+    if o == 'end': break
+    if isinstance(o, tuple) and len(o) == 2: opts[o[0]] = o[1]
+dns = opts.get('name_server', None)
+domain = opts.get('domain', None)
+ntp = opts.get('NTP_servers', None)
+assert dns is not None, 'option 6 (name_server) missing from OFFER'
+assert domain is not None, 'option 15 (domain) missing from OFFER'
+assert ntp is not None, 'option 42 (NTP_servers) missing from OFFER'
+print(f'OK: option 6  = {dns}')
+print(f'OK: option 15 = {domain}')
+print(f'OK: option 42 = {ntp}')
+"

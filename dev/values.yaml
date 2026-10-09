@@ -40,6 +40,13 @@ oob:
       ip: 192.168.100.200
       hostname: node-direct-static
 
+  dnsServers:
+    - 8.8.8.8
+    - 8.8.4.4
+  domain: dev.metaldhcp.local
+  ntpServers:
+    - 216.239.35.0
+
 debug:
   enabled: true
   serverIP: 192.168.100.1

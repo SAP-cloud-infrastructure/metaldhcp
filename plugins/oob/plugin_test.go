@@ -476,4 +476,33 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out).NotTo(BeNil())
 		Expect(out.BootFileName).To(BeEmpty())
 	})
+
+	It("sets DNS, domain, and NTP options in the OFFER", func(ctx SpecContext) {
+		h := buildPlugin(api.OOBConfig{
+			Subnets:    []api.Subnet{{CIDR: "10.30.0.0/24", Gateway: "10.30.0.1"}},
+			DNSServers: []string{"8.8.8.8", "8.8.4.4"},
+			Domain:     "example.com",
+			NTPServers: []string{"132.163.96.1"},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+		req, resp := discoverRelay(mac, net.ParseIP("10.30.0.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+
+		ipStrs := func(ips []net.IP) []string {
+			s := make([]string, len(ips))
+			for i, ip := range ips {
+				s[i] = ip.String()
+			}
+			return s
+		}
+		Expect(ipStrs(dhcpv4.GetIPs(dhcpv4.OptionDomainNameServer, out.Options))).To(ConsistOf("8.8.8.8", "8.8.4.4"))
+		Expect(out.DomainName()).To(Equal("example.com"))
+		Expect(ipStrs(dhcpv4.GetIPs(dhcpv4.OptionNTPServers, out.Options))).To(ConsistOf("132.163.96.1"))
+	})
 })

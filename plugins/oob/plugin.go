@@ -193,6 +193,16 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if gw := net.ParseIP(gateway); gw != nil {
 		resp.Options.Update(dhcpv4.OptRouter(gw))
 	}
+	if len(k.dnsServers) > 0 {
+		resp.Options.Update(dhcpv4.OptDNS(k.dnsServers...))
+	}
+	if k.domain != "" {
+		resp.Options.Update(dhcpv4.OptDomainName(k.domain))
+	}
+	if len(k.ntpServers) > 0 {
+		resp.Options.Update(dhcpv4.OptNTPServers(k.ntpServers...))
+	}
+	log.Debugf("  dns=%v domain=%q ntp=%v", k.dnsServers, k.domain, k.ntpServers)
 	if hostname != "" {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
