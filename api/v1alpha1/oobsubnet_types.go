@@ -13,6 +13,7 @@ import (
 // CIDR matches the DHCP relay/link information and allocates a free address from it.
 //
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="CIDR",type=string,JSONPath=`.spec.cidr`
 // +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`,priority=1
 type OOBSubnet struct {
