@@ -35,4 +35,13 @@ type OOBConfig struct {
 
 	// StaticLeases pins specific MACs to fixed IPs, bypassing pool allocation entirely.
 	StaticLeases []StaticLease `yaml:"staticLeases"`
+
+	// DNSServers is the list of DNS server IPs sent in option 6.
+	DNSServers []string `yaml:"dnsServers,omitempty"`
+
+	// Domain is the DNS search domain sent in option 15.
+	Domain string `yaml:"domain,omitempty"`
+
+	// NTPServers is the list of NTP server IPs or hostnames sent in option 42.
+	NTPServers []string `yaml:"ntpServers,omitempty"`
 }

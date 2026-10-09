@@ -50,6 +50,19 @@ oob:
   #   ip: 192.168.10.200
   #   hostname: bmc-static-01
 
+  # dnsServers is sent as DHCP option 6. Required for clients to resolve boot-operator.
+  dnsServers: []
+  # - 147.204.9.200
+  # - 147.204.9.201
+
+  # domain is sent as DHCP option 15 (DNS search domain).
+  domain: ""
+  # domain: cc.qa-de-1.cloud.sap
+
+  # ntpServers is sent as DHCP option 42.
+  ntpServers: []
+  # - 132.163.96.1
+
 securityContext:
   capabilities:
     add:
