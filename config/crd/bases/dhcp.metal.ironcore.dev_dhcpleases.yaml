@@ -31,6 +31,10 @@ spec:
     - jsonPath: .spec.gateway
       name: Gateway
       type: string
+    - jsonPath: .metadata.annotations['dhcp\.metal\.ironcore\.dev/vendor']
+      name: Vendor
+      priority: 1
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:

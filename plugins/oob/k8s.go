@@ -240,8 +240,9 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 }
 
 // applyLease upserts the DHCPLease for a MAC. The object name is the normalized MAC so re-leases
-// patch the same object and never create duplicates.
-func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, gateway, clientID, hostname string, leaseTime time.Duration) error {
+// patch the same object and never create duplicates. vendor is stored as an annotation when
+// vendor-lookup is enabled and non-empty.
+func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, gateway, clientID, hostname, vendor string, leaseTime time.Duration) error {
 	mutate := func(lease *metaldhcpv1alpha1.DHCPLease) {
 		lease.Spec.MACAddress = mac.String()
 		lease.Spec.IP = ip.String()
@@ -250,6 +251,12 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 		lease.Spec.Hostname = hostname
 		if leaseTime > 0 {
 			lease.Spec.LeaseTime = &metav1.Duration{Duration: leaseTime}
+		}
+		if vendor != "" {
+			if lease.Annotations == nil {
+				lease.Annotations = make(map[string]string)
+			}
+			lease.Annotations["dhcp.metal.ironcore.dev/vendor"] = vendor
 		}
 	}
 
@@ -285,7 +292,7 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 // emitEvent fires a Warning Kubernetes event on the metaldhcp Pod when a DHCP request
 // cannot be served. It is a no-op when no recorder has been wired (e.g. in tests that
 // don't test events).
-func (k *K8sClient) emitEvent(mac net.HardwareAddr, giaddr net.IP, err error) {
+func (k *K8sClient) emitEvent(mac net.HardwareAddr, giaddr net.IP, vendor string, err error) {
 	if globalRecorder == nil || globalPodRef == nil {
 		return
 	}
@@ -295,5 +302,5 @@ func (k *K8sClient) emitEvent(mac net.HardwareAddr, giaddr net.IP, err error) {
 		reason = ae.reason
 	}
 	globalRecorder.Eventf(globalPodRef, corev1.EventTypeWarning, reason,
-		"unmatched DHCP request: MAC %s giaddr %s: %v", mac, giaddr, err)
+		"unmatched DHCP request: MAC %s%s giaddr %s: %v", mac, vendorTag(vendor), giaddr, err)
 }

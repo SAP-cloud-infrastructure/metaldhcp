@@ -27,7 +27,11 @@ import (
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 )
 
-const testMAC = "aa:bb:cc:dd:ee:01"
+const (
+	dellMAC   = "18:66:da:00:11:01" // Dell
+	hpeMAC    = "04:09:73:00:11:01" // Hewlett Packard Enterprise
+	lenovoMAC = "10:c5:95:00:11:01" // Lenovo
+)
 
 // buildPlugin writes cfg to a temp config file, runs setup4, and returns the handler.
 func buildPlugin(cfg api.OOBConfig) handler.Handler4 {
@@ -83,7 +87,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "192.168.42.1"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("192.168.42.10"))
 
@@ -121,7 +125,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("192.168.43.10"))
 
@@ -148,7 +152,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "192.168.44.1"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 
 		req1, resp1 := discover(mac, net.ParseIP("192.168.44.10"))
@@ -185,7 +189,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Relay for the second subnet: giaddr is in cidr2.
@@ -216,7 +220,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.99.99.5"))
 
@@ -234,7 +238,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: "10.0.0.0/31"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.0.0.0"))
 
@@ -255,7 +259,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.1.1.1"))
 
@@ -273,7 +277,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discover(mac, net.ParseIP("10.2.2.1"))
 
@@ -295,11 +299,11 @@ var _ = Describe("OOB plugin handler4", func() {
 			Namespace: ns.Name,
 			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1"}},
 			StaticLeases: []api.StaticLease{
-				{MAC: testMAC, IP: staticIP, Hostname: staticHN},
+				{MAC: dellMAC, IP: staticIP, Hostname: staticHN},
 			},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 
 		// send with no pool hint — should still get the static IP
@@ -347,7 +351,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets:   []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
 		})
 
-		mac, err := net.ParseMAC(testMAC)
+		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		req, resp := discoverRelay(mac, net.ParseIP("10.99.99.1"))
 
@@ -363,5 +367,69 @@ var _ = Describe("OOB plugin handler4", func() {
 			HaveField("Reason", "NoPoolFound"),
 			HaveField("Type", corev1.EventTypeWarning),
 		)))
+	})
+
+	It("stores vendor annotation on DHCPLease when vendor-lookup is enabled", func(ctx SpecContext) {
+		ns := newNamespace(ctx)
+		const cidr = "10.10.10.0/24"
+
+		vendorLookup = true
+		DeferCleanup(func() { vendorLookup = false })
+
+		h := buildPlugin(api.OOBConfig{
+			Namespace: ns.Name,
+			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.10.10.1"}},
+		})
+
+		for _, tc := range []struct {
+			mac    string
+			vendor string
+		}{
+			{dellMAC, "Dell"},
+			{hpeMAC, "Hewlett Packard Enterprise"},
+			{lenovoMAC, "Lenovo"},
+		} {
+			mac, err := net.ParseMAC(tc.mac)
+			Expect(err).NotTo(HaveOccurred())
+			req, resp := discover(mac, net.ParseIP("10.10.10.1"))
+
+			out, drop := h(req, resp)
+			Expect(drop).To(BeFalse(), "mac=%s", tc.mac)
+			Expect(out).NotTo(BeNil())
+
+			lease := &metaldhcpv1alpha1.DHCPLease{
+				ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+			}
+			Eventually(ctx, Object(lease)).Should(
+				HaveField("Annotations", HaveKeyWithValue("dhcp.metal.ironcore.dev/vendor", tc.vendor)),
+				"mac=%s expected vendor %q", tc.mac, tc.vendor,
+			)
+		}
+	})
+
+	It("does not store vendor annotation when vendor-lookup is disabled", func(ctx SpecContext) {
+		ns := newNamespace(ctx)
+		const cidr = "10.10.11.0/24"
+
+		// vendorLookup defaults false; confirm no annotation written
+		h := buildPlugin(api.OOBConfig{
+			Namespace: ns.Name,
+			Subnets:   []api.Subnet{{CIDR: cidr, Gateway: "10.10.11.1"}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		req, resp := discover(mac, net.ParseIP("10.10.11.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+
+		lease := &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac), Namespace: ns.Name},
+		}
+		Eventually(ctx, Object(lease)).Should(
+			HaveField("Annotations", Not(HaveKey("dhcp.metal.ironcore.dev/vendor"))),
+		)
 	})
 })

@@ -9,6 +9,10 @@ set -euo pipefail
 
 CONTEXT="${KUBE_CONTEXT:-kind-metaldhcp}"
 NS="metaldhcp-system"
+# One prefix per vendor — last octet distinguishes scenarios within each vendor.
+DELL_PREFIX="18:66:da:00:11"    # -> "Dell"
+HPE_PREFIX="04:09:73:00:11"     # -> "Hewlett Packard Enterprise"
+LENOVO_PREFIX="10:c5:95:00:11"  # -> "Lenovo"
 
 exec_debug() {
   kubectl --context "${CONTEXT}" exec -n "${NS}" deploy/metaldhcp -c debug -- "$@"
@@ -32,7 +36,7 @@ exec_debug udhcpc -i veth0 -n -q -x hostname:node-direct
 echo ""
 echo "==> 2. Relay request — pool 192.168.100.0/24 (hostname: node-relay-01)"
 scapy_send "
-mac = '02:aa:bb:cc:dd:01'
+mac = '${DELL_PREFIX}:01'
 pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='192.168.100.50', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),('hostname','node-relay-01'),'end'])
 sendp(pkt, iface='veth0', verbose=False)
 "
@@ -40,15 +44,15 @@ sendp(pkt, iface='veth0', verbose=False)
 echo ""
 echo "==> 3. Relay request — pool 10.0.2.0/24 (hostname: node-relay-02)"
 scapy_send "
-mac = '02:aa:bb:cc:dd:02'
+mac = '${HPE_PREFIX}:02'
 pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='10.0.2.1', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),('hostname','node-relay-02'),'end'])
 sendp(pkt, iface='veth0', verbose=False)
 "
 
 echo ""
-echo "==> 4. Static lease (02:aa:bb:cc:dd:03 → 192.168.100.200, hostname: node-direct-static)"
+echo "==> 4. Static lease (${LENOVO_PREFIX}:03 → 192.168.100.200, hostname: node-direct-static)"
 scapy_send "
-mac = '02:aa:bb:cc:dd:03'
+mac = '${LENOVO_PREFIX}:03'
 pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
 sendp(pkt, iface='veth0', verbose=False)
 "
@@ -60,7 +64,7 @@ kubectl --context "${CONTEXT}" -n "${NS}" get dhcpleases.dhcp.metal.ironcore.dev
 echo ""
 echo "==> 5. Unmatched relay (giaddr 10.255.255.1 — no pool) — expect Warning event NoPoolFound"
 scapy_send "
-mac = '02:aa:bb:cc:dd:ff'
+mac = '${DELL_PREFIX}:ff'
 pkt = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), giaddr='10.255.255.1', flags=0x8000) / DHCP(options=[('message-type','discover'),('client_id', b'\x01' + mac2str(mac)),'end'])
 sendp(pkt, iface='veth0', verbose=False)
 "
@@ -97,7 +101,7 @@ echo ""
 echo "==> 7. Server identifier — OFFER must carry option 54 equal to the LoadBalancer VIP"
 scapy_send "
 import sys
-mac = '02:aa:bb:cc:dd:07'
+mac = '${DELL_PREFIX}:07'
 disc = Ether(src=mac, dst='ff:ff:ff:ff:ff:ff') / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(sport=68, dport=67) / BOOTP(chaddr=mac2str(mac), flags=0x8000) / DHCP(options=[('message-type','discover'),('param_req_list',[54]),'end'])
 ans = srp(disc, iface='veth0-server', timeout=3, verbose=False)
 if not ans or not ans[0]:

@@ -16,12 +16,29 @@ import (
 	"github.com/coredhcp/coredhcp/handler"
 	"github.com/coredhcp/coredhcp/logger"
 	"github.com/coredhcp/coredhcp/plugins"
+	ouipkg "github.com/endobit/oui"
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"gopkg.in/yaml.v3"
 )
 
 var log = logger.GetLogger("plugins/oob")
+
+// vendorLookup enables IEEE OUI vendor enrichment. Set via EnableVendorLookup before
+// the first DHCP request arrives.
+var vendorLookup bool
+
+// EnableVendorLookup switches on MAC-to-vendor lookup for log lines, events, and
+// DHCPLease annotations. Uses ~500 KB of embedded OUI data; off by default.
+func EnableVendorLookup() { vendorLookup = true }
+
+// vendorTag returns " (vendor)" when v is non-empty, "" otherwise.
+func vendorTag(v string) string {
+	if v == "" {
+		return ""
+	}
+	return " (" + v + ")"
+}
 
 var Plugin = plugins.Plugin{
 	Name:   "oob",
@@ -95,7 +112,12 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	clientIP := req.ClientIPAddr
 	requestedIP := dhcpv4.GetIP(dhcpv4.OptionRequestedIPAddress, req.Options)
 	giaddr := req.GatewayIPAddr
-	log.Debugf("→ %s mac=%s giaddr=%s ciaddr=%s", req.MessageType(), mac, giaddr, clientIP)
+
+	var vendor string
+	if vendorLookup {
+		vendor = ouipkg.VendorFromMAC(mac)
+	}
+	log.Debugf("→ %s mac=%s%s giaddr=%s ciaddr=%s", req.MessageType(), mac, vendorTag(vendor), giaddr, clientIP)
 
 	// poolHint selects which subnet pool to allocate from.
 	// allocHint + exactIP control whether a specific address is honored.
@@ -150,7 +172,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
 		if err != nil {
 			log.Errorf("Could not allocate IP: %s", err)
-			k.emitEvent(mac, giaddr, err)
+			k.emitEvent(mac, giaddr, vendor, err)
 			return nil, true
 		}
 		hostname = requestHostname(req)
@@ -172,7 +194,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if hostname != "" {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
-	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, leaseTime); err != nil {
+	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 	}
 	log.Debugf("← OFFER mac=%s yiaddr=%s", mac, leaseIP)
