@@ -117,6 +117,13 @@ when the pod restarts or moves. Observed during qa-de-8 buildup (helm-charts #12
 - [x] 16.3 Update `example/oob.yaml` and the Helm chart values with a comment
   explaining why this must match the LoadBalancer IP
 
+## 17. DNS propagation
+
+- [ ] 17.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
+- [ ] 17.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
+- [ ] 17.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
+- [ ] 17.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed
+
 ## 18. MAC vendor lookup
 
 Add optional hardware vendor enrichment using the embedded IEEE OUI database
@@ -133,10 +140,3 @@ network, no latency) so it is safe in the DHCP hot path.
   (`dhcp.metal.ironcore.dev/vendor`) so downstream operators have it without a
   separate lookup; document that the value reflects the OUI at the time of lease
   creation and may become stale if the database is not kept up to date
-
-## 17. DNS propagation
-
-- [ ] 17.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
-- [ ] 17.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
-- [ ] 17.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
-- [ ] 17.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed

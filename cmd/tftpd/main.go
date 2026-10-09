@@ -42,8 +42,12 @@ func readHandler(root string) func(string, io.ReaderFrom) error {
 			log.Warnf("tftp: sending %s: %v", filename, err)
 			return err
 		}
-		remote := rf.(tftp.OutgoingTransfer).RemoteAddr()
-		log.Infof("tftp: sent %s (%d bytes) to %s", filename, n, remote.String())
+		if ot, ok := rf.(tftp.OutgoingTransfer); ok {
+			remote := ot.RemoteAddr()
+			log.Infof("tftp: sent %s (%d bytes) to %s", filename, n, remote.String())
+		} else {
+			log.Infof("tftp: sent %s (%d bytes)", filename, n)
+		}
 		return nil
 	}
 }
