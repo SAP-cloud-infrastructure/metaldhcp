@@ -67,3 +67,28 @@ sendp(pkt, iface='veth0', verbose=False)
 echo "    Waiting 2s for event to propagate..."
 sleep 2
 kubectl --context "${CONTEXT}" -n "${NS}" get events --field-selector reason=NoPoolFound
+
+echo ""
+echo "==> 6. TFTP — fetch snponly.efi from tftpd sidecar (option 66/67 PXE boot path)"
+TFTPD_COUNT=$(kubectl --context "${CONTEXT}" -n "${NS}" get pod \
+  -l app.kubernetes.io/name=metaldhcp \
+  -o jsonpath='{.items[0].spec.containers[*].name}' 2>/dev/null | tr ' ' '\n' | grep -c tftpd || true)
+if [ "${TFTPD_COUNT}" = "0" ]; then
+  echo "    (skipped — tftpd container not present; set tftp.enabled=true in dev/values.yaml)"
+else
+  exec_debug python3 -c "
+import socket, struct, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(5)
+# RRQ packet: opcode=1, filename, mode
+s.sendto(b'\\x00\\x01snponly.efi\\x00octet\\x00', ('127.0.0.1', 69))
+pkt, addr = s.recvfrom(65535)
+opcode = struct.unpack('!H', pkt[:2])[0]
+assert opcode == 3, f'expected DATA (3), got opcode {opcode}: {pkt!r}'
+data = pkt[4:]
+s.sendto(struct.pack('!HH', 4, struct.unpack('!H', pkt[2:4])[0]), addr)
+assert len(data) > 0, 'received empty file'
+print(f'OK: received {len(data)} bytes via TFTP')
+"
+fi

@@ -31,6 +31,7 @@ arch = str(local("go env GOARCH", quiet=True)).strip()
 docker_build(
     image_ref("metaldhcp"),
     ".",
+    dockerfile="Dockerfile.dev",
     build_args={"TARGETARCH": arch, "TARGETOS": "linux"},
 )
 k8s_yaml(helm(
