@@ -87,13 +87,16 @@ metaldhcp must serve (or proxy) TFTP so the full PXE boot chain works without a
 separate dnsmasq instance. UDP/69 from the OOB subnet to the DHCP server IP must
 be permitted in the network firewall (a deployment prerequisite, not a code task).
 
-- [ ] 15.1 Evaluate integration options: coredhcp TFTP plugin (serves files from a
+- [x] 15.1 Evaluate integration options: coredhcp TFTP plugin (serves files from a
   ConfigMap-mounted directory) vs. dedicated TFTP sidecar container in the Pod
-- [ ] 15.2 Implement chosen approach; wire the iPXE binary path via a Helm value
-  (`tftp.enabled`, `tftp.rootDir` or equivalent)
-- [ ] 15.3 Add the TFTP port (UDP/69) to the Service and, where applicable, to the
+  → chose dedicated sidecar (`cmd/tftpd`) sharing the Pod network namespace
+- [x] 15.2 Implement chosen approach; wire the iPXE binary path via a Helm value
+  (`tftp.enabled`, `tftp.nbpFilename`); iPXE built from source with
+  `DOWNLOAD_PROTO_HTTPS` + DigiCert CAs and baked into the image at
+  `/ipxe/snponly.efi`; `tftp.ipxeURL` allows runtime override via init container
+- [x] 15.3 Add the TFTP port (UDP/69) to the Service and, where applicable, to the
   LoadBalancer annotation so the port is reachable from the OOB subnet
-- [ ] 15.4 Update the Helm chart README / deployment notes with the required firewall
+- [x] 15.4 Update the Helm chart README / deployment notes with the required firewall
   rule: allow UDP/69 from the OOB /26 (or site-specific) subnet to the LoadBalancer IP
 
 ## 16. DHCP option 54 (server identifier) set to LoadBalancer VIP

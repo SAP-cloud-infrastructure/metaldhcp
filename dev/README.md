@@ -47,16 +47,18 @@ udhcpc -i veth0 -n -q
 dhcping -v -s 192.168.100.1 -h 02:aa:bb:cc:dd:ee -t 3
 ```
 
-## Testing relay (giaddr) and static leases
+## Testing relay (giaddr), static leases, and TFTP
 
-Run all four scenarios at once:
+Run all scenarios at once:
 
 ```sh
 make test-dhcp   # or ./dev/test-dhcp.sh
 ```
 
-This sends a direct udhcpc request, two scapy packets with `giaddr` set (one per pool to verify
-pool routing), and a static-lease request. It prints the resulting `DHCPLease` table at the end.
+This sends: a direct udhcpc request, two scapy packets with `giaddr` set (one per pool),
+a static-lease request, an unmatched relay (expects a `NoPoolFound` Warning event), and a
+raw TFTP fetch of `snponly.efi` from the tftpd sidecar. It prints the resulting `DHCPLease`
+table after the DHCP scenarios.
 
 For the relay path, the metaldhcp logs should show:
 
