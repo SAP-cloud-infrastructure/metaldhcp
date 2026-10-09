@@ -329,7 +329,12 @@ var _ = Describe("OOB plugin handler4", func() {
 		broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: cs.CoreV1().Events(ns.Name)})
 		DeferCleanup(broadcaster.Shutdown)
 
-		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "metaldhcp-0", Namespace: ns.Name}}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "metaldhcp-0", Namespace: ns.Name},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "metaldhcp", Image: "metaldhcp"}},
+			},
+		}
 		Expect(crClient.Create(ctx, pod)).To(Succeed())
 		DeferCleanup(crClient.Delete, pod)
 
