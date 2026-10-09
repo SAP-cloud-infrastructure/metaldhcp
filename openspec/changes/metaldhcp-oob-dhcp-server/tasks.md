@@ -144,7 +144,27 @@ event creates fail with forbidden.
 
 - [x] 20.1 In `setupEventRecorder`, use `rest.InClusterConfig()` instead of `kubernetes.GetConfig()` so events target the a-cluster (pod's own cluster) where the SA has permission; DHCPLease/OOBSubnet client continues using the remote kubeconfig unchanged
 
-Add optional hardware vendor enrichment using the embedded IEEE OUI database
+## 21. Two-phase PXE boot: iPXE chain URL via option 97 UUID
+
+BIOS/UEFI PXE firmware boots in two phases. Phase 1: PXE firmware sends DISCOVER with
+option 60 = "PXEClient"; metaldhcp responds with option 66 (TFTP server) + option 67
+(snponly.efi) via the `nbp` plugin. Phase 2: the loaded iPXE binary sends a new DISCOVER
+with option 60 containing "iPXE" and option 97 (UUID/GUID). metaldhcp must respond with
+option 67 = `<bootURL>/ipxe/<uuid>` and stop the chain before `nbp` can overwrite it with
+the TFTP filename (which would cause an infinite TFTP loop).
+
+- [x] 21.1 In `handler4`, detect iPXE phase by checking `req.ClassIdentifier()` for "iPXE";
+  extract the UUID from option 97 (Client Machine Identifier); set option 67 and
+  `BootFileName` to `<bootURL>/ipxe/<uuid>`; return `stop=true` to prevent `nbp` from
+  overriding. Always stop chain for iPXE phase even when bootURL is empty (prevents
+  infinite TFTP loop).
+- [x] 21.2 Add `extractUUID` helper: parses option 97 (1 type byte + 16 UUID bytes), formats
+  as lowercase hyphenated UUID (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`), returns "" when
+  absent or malformed.
+- [x] 21.3 Add envtest cases: iPXE phase with bootURL + option 97 → chain URL set in
+  BootFileName and option 67, stop=true; iPXE phase without option 97 → bare chain URL,
+  stop=true; iPXE phase without bootURL → empty BootFileName, stop=true.
+
 (`github.com/endobit/oui`). The lookup is a pure in-memory map operation (no
 network, no latency) so it is safe in the DHCP hot path.
 

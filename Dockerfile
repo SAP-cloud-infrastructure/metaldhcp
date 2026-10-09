@@ -1,3 +1,4 @@
+# hadolint ignore=FromPlatformFlagConstDisallowed
 FROM --platform=linux/amd64 alpine:3.22 AS ipxe-builder
 
 RUN apk add --no-cache --no-progress \
