@@ -69,10 +69,7 @@
 
 ## 13. Prometheus metrics
 
-- [ ] 13.1 Expose a `/metrics` HTTP endpoint (port 8080) via `prometheus/client_golang`
-- [ ] 13.2 Add metrics: active lease count per pool (`metaldhcp_leases_active`), total allocations (`metaldhcp_allocations_total`), allocation errors (`metaldhcp_allocation_errors_total`), pool utilization ratio (`metaldhcp_pool_utilization_ratio`)
-- [ ] 13.3 Add a `ServiceMonitor` to the Helm chart (optional, gated by a values flag)
-- [ ] 13.4 Add unit tests for counter increments; verify the metrics endpoint responds in envtest
+- [x] 13.1 Covered via kube-state-metrics Custom Resource State (CRS) — no `/metrics` endpoint needed in metaldhcp. KSM reads `DHCPLease` and `OOBSubnet` CRs and exposes lease inventory, vendor, and gateway labels as info metrics.
 
 ## 14. Kubernetes events for unmatched DHCP requests
 
