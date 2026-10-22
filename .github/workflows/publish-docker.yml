@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
 name: Build and publish Docker image
 
@@ -59,6 +59,21 @@ jobs:
           type=sha
         flavor: |
           latest=${{ github.ref == 'refs/heads/main' }}
+    - name: Collect metadata (network-init)
+      uses: docker/metadata-action@v6
+      id: meta-network-init
+      with:
+        images: |
+          ghcr.io/${{ steps.owner.outputs.value }}/metaldhcp-network-init
+        tags: |
+          type=semver,pattern={{version}}
+          type=schedule
+          type=ref,event=branch
+          type=ref,event=tag
+          type=ref,event=pr
+          type=sha
+        flavor: |
+          latest=${{ github.ref == 'refs/heads/main' }}
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
       with:
@@ -88,5 +103,17 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: |
           ${{ steps.meta.outputs.labels }}
+          source_repository=${{ github.server_url }}/${{ github.repository }}
+        push: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ok-to-publish') }}
+    - name: Build and push Docker image (network-init)
+      uses: docker/build-push-action@v7
+      timeout-minutes: 5
+      with:
+        context: .
+        target: network-init
+        platforms: ${{ env.platforms }}
+        tags: ${{ steps.meta-network-init.outputs.tags }}
+        labels: |
+          ${{ steps.meta-network-init.outputs.labels }}
           source_repository=${{ github.server_url }}/${{ github.repository }}
         push: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ok-to-publish') }}
