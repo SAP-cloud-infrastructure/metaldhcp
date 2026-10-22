@@ -120,3 +120,9 @@ The `Hostname` field in `DHCPLease` (populated from static lease config or DHCP 
 ## Dev environment
 
 See [dev/README.md](dev/README.md) for the local kind + Tilt setup, DHCP triggering, relay (giaddr) testing, and static lease examples. The Tilt setup renders the Helm chart from `chart/metaldhcp/` with dev overrides from `dev/values.yaml`.
+
+## Licensing
+
+Copyright SAP SE or an SAP affiliate company and IronCore contributors. Licensed under the [Apache License 2.0](LICENSE).
+
+[![REUSE status](https://api.reuse.software/badge/github.com/SAP-cloud-infrastructure/metaldhcp)](https://api.reuse.software/info/github.com/SAP-cloud-infrastructure/metaldhcp)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 #
 # Run all dev DHCP test scenarios against the local kind cluster.
 # Requires: make tilt-up, metaldhcp pod running and ready.

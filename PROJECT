@@ -6,7 +6,7 @@ repo: github.com/SAP-cloud-infrastructure/metaldhcp
 resources:
 - api:
     crdVersion: v1
-    namespaced: true
+    namespaced: false
   domain: metal.ironcore.dev
   group: dhcp
   kind: OOBSubnet
@@ -14,7 +14,7 @@ resources:
   version: v1alpha1
 - api:
     crdVersion: v1
-    namespaced: true
+    namespaced: false
   domain: metal.ironcore.dev
   group: dhcp
   kind: DHCPLease

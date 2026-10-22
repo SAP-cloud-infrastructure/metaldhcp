@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package allocator provides a concurrency-safe, in-memory IPv4 allocator backed by
 // the DHCPLease ledger. The oob plugin seeds it from existing DHCPLease objects on

@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: Apache-2.0
+version = 1
+SPDX-PackageName = "metaldhcp"
+SPDX-PackageDownloadLocation = "https://github.com/SAP-cloud-infrastructure/metaldhcp"
+
+[[annotations]]
+path = [
+  ".github/workflows/chart.yml",
+  ".github/workflows/check-codegen.yml",
+  ".github/workflows/test.yml",
+  "CODEOWNERS",
+  "Dockerfile",
+  "Makefile",
+  "go.mod",
+  "go.sum",
+  "hack/crd-ref-docs.yaml",
+  "example/config.yaml",
+  "example/oob.yaml",
+  "openspec/changes/metaldhcp-oob-dhcp-server/.openspec.yaml",
+  "openspec/config.yaml",
+]
+SPDX-FileCopyrightText = "SAP SE or an SAP affiliate company and IronCore contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "config/crd/bases/dhcp.metal.ironcore.dev_dhcpleases.yaml",
+  "config/crd/bases/dhcp.metal.ironcore.dev_oobsubnets.yaml",
+]
+SPDX-FileCopyrightText = "SAP SE or an SAP affiliate company and IronCore contributors"
+SPDX-License-Identifier = "MIT"
