@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 package oob
 
@@ -47,16 +47,12 @@ func buildPlugin(cfg api.OOBConfig) handler.Handler4 {
 	return h
 }
 
-// discover builds a DISCOVER req and its reply stub, optionally seeding the reply's
-// ServerIPAddr as the (non-exact) pool-selection hint.
-func discover(mac net.HardwareAddr, serverHint net.IP) (*dhcpv4.DHCPv4, *dhcpv4.DHCPv4) {
+// discoverDirect builds a DISCOVER req with no relay: giaddr=0.0.0.0, client fields zeroed.
+func discoverDirect(mac net.HardwareAddr) (*dhcpv4.DHCPv4, *dhcpv4.DHCPv4) {
 	req, err := dhcpv4.NewDiscovery(mac)
 	Expect(err).NotTo(HaveOccurred())
 	resp, err := dhcpv4.NewReplyFromRequest(req)
 	Expect(err).NotTo(HaveOccurred())
-	if serverHint != nil {
-		resp.ServerIPAddr = serverHint
-	}
 	return req, resp
 }
 
@@ -110,7 +106,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
-		req, resp := discover(mac, net.ParseIP("192.168.42.10"))
+		req, resp := discoverRelay(mac, net.ParseIP("192.168.42.10"))
 
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
@@ -146,7 +142,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
-		req, resp := discover(mac, net.ParseIP("192.168.43.10"))
+		req, resp := discoverRelay(mac, net.ParseIP("192.168.43.10"))
 
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
@@ -173,7 +169,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
 
-		req1, resp1 := discover(mac, net.ParseIP("192.168.44.10"))
+		req1, resp1 := discoverRelay(mac, net.ParseIP("192.168.44.10"))
 		out1, drop1 := h(req1, resp1)
 		Expect(drop1).To(BeFalse())
 		Expect(out1).NotTo(BeNil())
@@ -184,7 +180,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		}
 		Eventually(Object(lease)).Should(HaveField("Spec.IP", firstIP))
 
-		req2, resp2 := discover(mac, net.ParseIP("192.168.44.10"))
+		req2, resp2 := discoverRelay(mac, net.ParseIP("192.168.44.10"))
 		out2, drop2 := h(req2, resp2)
 		Expect(drop2).To(BeFalse())
 		Expect(out2).NotTo(BeNil())
@@ -229,14 +225,15 @@ var _ = Describe("OOB plugin handler4", func() {
 		))
 	})
 
-	It("drops the request when no pool CIDR matches the hint", func(ctx SpecContext) {
+	It("drops the request when no pool CIDR matches the relay giaddr", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{{CIDR: "192.168.45.0/24", Gateway: "192.168.45.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
-		req, resp := discover(mac, net.ParseIP("10.99.99.5"))
+		// Relay agent reports a giaddr not in any configured pool.
+		req, resp := discoverRelay(mac, net.ParseIP("10.99.99.5"))
 
 		out, drop := h(req, resp)
 		Expect(out).To(BeNil())
@@ -251,7 +248,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
-		req, resp := discover(mac, net.ParseIP("10.0.0.0"))
+		req, resp := discoverRelay(mac, net.ParseIP("10.0.0.0"))
 
 		out, drop := h(req, resp)
 		Expect(out).To(BeNil())
@@ -271,7 +268,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
-		req, resp := discover(mac, net.ParseIP("10.1.1.1"))
+		req, resp := discoverRelay(mac, net.ParseIP("10.1.1.1"))
 
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
@@ -287,7 +284,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
-		req, resp := discover(mac, net.ParseIP("10.2.2.1"))
+		req, resp := discoverRelay(mac, net.ParseIP("10.2.2.1"))
 
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
@@ -313,8 +310,8 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
 
-		// send with no pool hint — should still get the static IP
-		req, resp := discover(mac, nil)
+		// relay from the pool subnet — static lease overrides dynamic allocation for this MAC
+		req, resp := discoverRelay(mac, net.ParseIP("10.3.3.1"))
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
@@ -396,7 +393,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			mac, err := net.ParseMAC(tc.mac)
 			Expect(err).NotTo(HaveOccurred())
 			deferDeleteLease(mac)
-			req, resp := discover(mac, net.ParseIP("10.10.10.1"))
+			req, resp := discoverRelay(mac, net.ParseIP("10.10.10.1"))
 
 			out, drop := h(req, resp)
 			Expect(drop).To(BeFalse(), "mac=%s", tc.mac)
@@ -423,7 +420,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		mac, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
 		deferDeleteLease(mac)
-		req, resp := discover(mac, net.ParseIP("10.10.11.1"))
+		req, resp := discoverRelay(mac, net.ParseIP("10.10.11.1"))
 
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
@@ -477,6 +474,44 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out.BootFileName).To(BeEmpty())
 	})
 
+	It("drops the request when no relay agent is configured (giaddr=0.0.0.0)", func(ctx SpecContext) {
+		const serverVIP = "10.44.8.78"
+
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{CIDR: "10.5.5.0/24", Gateway: "10.5.5.1"}},
+		})
+
+		mac, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Direct DISCOVER with no relay: resp.ServerIPAddr is the LB VIP set by server_id plugin.
+		// No giaddr means the relay agent is absent; DROP regardless of ServerIPAddr.
+		req, resp := discoverDirect(mac)
+		resp.ServerIPAddr = net.ParseIP(serverVIP)
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeTrue())
+		Expect(out).To(BeNil())
+	})
+
+	It("drops the request when giaddr equals server's own IP (misconfigured relay)", func(ctx SpecContext) {
+		const serverVIP = "10.44.8.78"
+
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{CIDR: "10.5.6.0/24", Gateway: "10.5.6.1"}},
+		})
+
+		mac, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Relay misconfigured: giaddr points back at the DHCP server's own VIP.
+		req, resp := discoverRelay(mac, net.ParseIP(serverVIP))
+		resp.ServerIPAddr = net.ParseIP(serverVIP)
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeTrue())
+		Expect(out).To(BeNil())
+	})
 	It("sets DNS, domain, and NTP options in the OFFER", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
 			Subnets:    []api.Subnet{{CIDR: "10.30.0.0/24", Gateway: "10.30.0.1"}},

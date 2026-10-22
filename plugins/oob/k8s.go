@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 package oob
 
@@ -22,8 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
-
-const unknownIP = "0.0.0.0"
 
 // allocationError carries a structured event reason alongside the underlying error so
 // handler4 can emit the right Kubernetes Event reason without string matching.

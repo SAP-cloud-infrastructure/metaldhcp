@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 package oob
 
@@ -133,6 +133,16 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		// Relayed packet: giaddr is on the client's subnet — use it for pool selection.
 		// The client's own address hints still drive exact-IP allocation within that pool.
 		poolHint = giaddr
+		if resp.ServerIPAddr != nil && !resp.ServerIPAddr.IsUnspecified() && poolHint.Equal(resp.ServerIPAddr) {
+			// giaddr points back at the DHCP server itself — relay agent misconfigured.
+			err := &allocationError{
+				reason: "RelayMisconfigured",
+				err:    fmt.Errorf("giaddr %s equals server address; relay agent misconfigured", giaddr),
+			}
+			log.Infof("← DROP %s mac=%s%s%s: %s", req.MessageType(), mac, vendorTag(vendor), classTag, err)
+			k.emitEvent(mac, giaddr, vendor, err)
+			return nil, true
+		}
 		switch {
 		case clientIP != nil && !clientIP.IsUnspecified():
 			exactIP = true
@@ -142,20 +152,14 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 			allocHint = requestedIP
 		}
 	} else {
-		// Direct packet: same IP drives both pool selection and allocation.
-		switch {
-		case clientIP != nil && !clientIP.IsUnspecified():
-			exactIP = true
-			allocHint = clientIP
-		case requestedIP != nil && !requestedIP.IsUnspecified():
-			exactIP = true
-			allocHint = requestedIP
-		case resp.ServerIPAddr != nil && !resp.ServerIPAddr.IsUnspecified():
-			allocHint = resp.ServerIPAddr
-		default:
-			allocHint = net.ParseIP(unknownIP)
+		// Direct packet (giaddr=0.0.0.0): relay agent required.
+		err := &allocationError{
+			reason: "NoRelayAddress",
+			err:    fmt.Errorf("no relay agent (giaddr=0.0.0.0); configure a relay agent for this subnet"),
 		}
-		poolHint = allocHint
+		log.Infof("← DROP %s mac=%s%s%s: %s", req.MessageType(), mac, vendorTag(vendor), classTag, err)
+		k.emitEvent(mac, giaddr, vendor, err)
+		return nil, true
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -171,8 +175,8 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 	} else {
-		log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t, relay %t)",
-			mac, poolHint, allocHint, exactIP, giaddr != nil && !giaddr.IsUnspecified())
+		log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t)",
+			mac, poolHint, allocHint, exactIP)
 		var err error
 		leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
 		if err != nil {
