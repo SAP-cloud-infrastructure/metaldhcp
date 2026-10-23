@@ -48,10 +48,24 @@ spec:
             - {{ .Values.server.logLevel | quote }}
             - "-health-addr"
             - {{ .Values.server.healthAddr | quote }}
+            {{- if .Values.webhook.enabled }}
+            - "-webhook-enabled"
+            - "-webhook-addr"
+            - ":{{ .Values.webhook.port }}"
+            - "-webhook-cert"
+            - "/etc/metaldhcp/webhook/tls.crt"
+            - "-webhook-key"
+            - "/etc/metaldhcp/webhook/tls.key"
+            {{- end }}
           ports:
             - name: health
               containerPort: 8080
               protocol: TCP
+            {{- if .Values.webhook.enabled }}
+            - name: webhook
+              containerPort: {{ .Values.webhook.port }}
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -81,6 +95,11 @@ spec:
             - name: config
               mountPath: /etc/metaldhcp
               readOnly: true
+            {{- if .Values.webhook.enabled }}
+            - name: webhook-cert
+              mountPath: /etc/metaldhcp/webhook
+              readOnly: true
+            {{- end }}
         {{- if .Values.debug.enabled }}
         - name: debug
           image: {{ .Values.debug.image }}
@@ -120,6 +139,11 @@ spec:
         - name: config
           configMap:
             name: {{ include "metaldhcp.fullname" . }}-config
+        {{- if .Values.webhook.enabled }}
+        - name: webhook-cert
+          secret:
+            secretName: {{ required "webhook.certSecretName is required when webhook.enabled" .Values.webhook.certSecretName }}
+        {{- end }}
         {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
         - name: ipxe-override
           emptyDir: {}

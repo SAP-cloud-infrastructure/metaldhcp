@@ -185,6 +185,12 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 			return nil, true
 		}
 		hostname = requestHostname(req)
+		// getIP may have seeded CR-based statics into k.statics; re-check so the static
+		// entry's hostname, gateway, and bootURL are used even on the first request.
+		if entry, ok := k.lookupStaticLease(macKey); ok {
+			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
+			poolLeaseTime = 0
+		}
 	}
 
 	leaseTime := resp.IPAddressLeaseTime(0)

@@ -49,15 +49,15 @@ data:
         {{- if .bootURL }}
         bootURL: {{ .bootURL }}
         {{- end }}
-      {{- end }}
-    {{- end }}
-    {{- with .Values.oob.staticLeases }}
-    staticLeases:
-      {{- range . }}
-      - mac: {{ .mac | quote }}
-        ip: {{ .ip }}
-        {{- if .hostname }}
-        hostname: {{ .hostname }}
+        {{- with .staticLeases }}
+        staticLeases:
+          {{- range . }}
+          - mac: {{ .mac | quote }}
+            ip: {{ .ip }}
+            {{- if .hostname }}
+            hostname: {{ .hostname }}
+            {{- end }}
+          {{- end }}
         {{- end }}
       {{- end }}
     {{- end }}

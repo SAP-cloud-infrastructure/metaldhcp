@@ -158,6 +158,123 @@ var _ = Describe("OOB plugin handler4", func() {
 		))
 	})
 
+	It("drops first when no OOBSubnet CR exists, then allocates after the CR is created", func(ctx SpecContext) {
+		const cidr = "172.16.10.0/24"
+
+		h := buildPlugin(api.OOBConfig{
+			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+
+		req, resp := discoverRelay(mac, net.ParseIP("172.16.10.1"))
+		out, drop := h(req, resp)
+		Expect(out).To(BeNil())
+		Expect(drop).To(BeTrue(), "request must be dropped before the OOBSubnet CR exists")
+
+		subnet := &metaldhcpv1alpha1.OOBSubnet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "subnet-hot-add",
+				Labels: map[string]string{"oob": "true"},
+			},
+			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "172.16.10.1"},
+		}
+		Expect(crClient.Create(ctx, subnet)).To(Succeed())
+		DeferCleanup(crClient.Delete, subnet)
+		deferDeleteLease(mac)
+
+		req2, resp2 := discoverRelay(mac, net.ParseIP("172.16.10.1"))
+		out2, drop2 := h(req2, resp2)
+		Expect(drop2).To(BeFalse(), "request must succeed after the OOBSubnet CR is created")
+		Expect(out2).NotTo(BeNil())
+		Expect(contains(cidr, out2.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must be within %s", out2.YourIPAddr, cidr)
+	})
+
+	It("allocates the reserved IP from an OOBSubnet CR static lease for the matching MAC", func(ctx SpecContext) {
+		const (
+			cidr     = "172.16.11.0/24"
+			staticIP = "172.16.11.55"
+			staticHN = "bmc-cr-node001"
+		)
+
+		subnet := &metaldhcpv1alpha1.OOBSubnet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "subnet-cr-static",
+				Labels: map[string]string{"oob": "true"},
+			},
+			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+				CIDR:    cidr,
+				Gateway: "172.16.11.1",
+				StaticLeases: []metaldhcpv1alpha1.StaticLease{
+					{MAC: dellMAC, IP: staticIP, Hostname: staticHN},
+				},
+			},
+		}
+		Expect(crClient.Create(ctx, subnet)).To(Succeed())
+		DeferCleanup(crClient.Delete, subnet)
+
+		h := buildPlugin(api.OOBConfig{
+			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+		req, resp := discoverRelay(mac, net.ParseIP("172.16.11.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		Expect(out.YourIPAddr.String()).To(Equal(staticIP))
+
+		lease := &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+		}
+		Eventually(ctx, Object(lease)).Should(SatisfyAll(
+			HaveField("Spec.IP", staticIP),
+			HaveField("Spec.Hostname", staticHN),
+		))
+	})
+
+	It("does not offer the static IP from a CR to a different MAC", func(ctx SpecContext) {
+		const (
+			cidr     = "172.16.12.0/24"
+			staticIP = "172.16.12.77"
+		)
+
+		subnet := &metaldhcpv1alpha1.OOBSubnet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "subnet-cr-static-isolation",
+				Labels: map[string]string{"oob": "true"},
+			},
+			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+				CIDR:    cidr,
+				Gateway: "172.16.12.1",
+				StaticLeases: []metaldhcpv1alpha1.StaticLease{
+					{MAC: dellMAC, IP: staticIP},
+				},
+			},
+		}
+		Expect(crClient.Create(ctx, subnet)).To(Succeed())
+		DeferCleanup(crClient.Delete, subnet)
+
+		h := buildPlugin(api.OOBConfig{
+			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
+		})
+
+		mac, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+		req, resp := discoverRelay(mac, net.ParseIP("172.16.12.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		Expect(out.YourIPAddr.String()).NotTo(Equal(staticIP), "reserved IP must not be offered to a different MAC")
+		Expect(contains(cidr, out.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must still be within %s", out.YourIPAddr, cidr)
+	})
+
 	It("returns the same IP on re-lease and patches the single DHCPLease", func(ctx SpecContext) {
 		const cidr = "192.168.44.0/24"
 
@@ -300,10 +417,9 @@ var _ = Describe("OOB plugin handler4", func() {
 		)
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1"}},
-			StaticLeases: []api.StaticLease{
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1", StaticLeases: []api.StaticLease{
 				{MAC: dellMAC, IP: staticIP, Hostname: staticHN},
-			},
+			}}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)

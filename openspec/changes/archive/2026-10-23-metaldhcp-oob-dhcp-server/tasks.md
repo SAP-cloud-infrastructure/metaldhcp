@@ -116,10 +116,7 @@ when the pod restarts or moves. Observed during qa-de-8 buildup (helm-charts #12
 
 ## 17. DNS propagation
 
-- [ ] 17.1 Decide integration approach: controller writing `externaldns.k8s.io/v1alpha1 DNSEndpoint` CRs (ExternalDNS) vs direct DNS API calls; document the decision in the PR
-- [ ] 17.2 Implement a controller watching `DHCPLease` CRs — on create/update write a forward A record; on delete remove it; skip leases with empty hostname
-- [ ] 17.3 Add RBAC for the DNS resource (DNSEndpoint or equivalent) to the Helm chart
-- [ ] 17.4 Add envtest coverage: lease create with hostname → DNS record created; hostname empty → no record; lease delete → record removed
+Moved to change `metaldhcp-dns-propagation`.
 
 ## 19. Cluster-scoped CRDs
 

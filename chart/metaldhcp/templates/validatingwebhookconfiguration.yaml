@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: Apache-2.0
+{{- if .Values.webhook.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "metaldhcp.fullname" . }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Values.namespace }}/{{ include "metaldhcp.fullname" . }}-webhook
+  {{- end }}
+webhooks:
+  - name: oobsubnet.dhcp.metal.ironcore.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore
+    rules:
+      - apiGroups: ["dhcp.metal.ironcore.dev"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["oobsubnets"]
+    clientConfig:
+      service:
+        name: {{ include "metaldhcp.fullname" . }}
+        namespace: {{ .Values.namespace }}
+        port: {{ .Values.webhook.port }}
+        path: /validate-oobsubnet
+{{- end }}

@@ -15,6 +15,12 @@ spec:
       port: 67
       protocol: UDP
       targetPort: 67
+    {{- if .Values.webhook.enabled }}
+    - name: webhook
+      port: {{ .Values.webhook.port }}
+      protocol: TCP
+      targetPort: {{ .Values.webhook.port }}
+    {{- end }}
     {{- if .Values.tftp.enabled }}
     - name: tftp
       port: 69

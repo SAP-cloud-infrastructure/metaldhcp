@@ -67,7 +67,6 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 	k := &K8sClient{
 		Client:       kubernetes.GetClient(),
 		SubnetLabels: cfg.SubnetLabels,
-		configPools:  configPools(cfg.Subnets),
 		alloc:        allocator.New(),
 		statics:      make(map[string]staticEntry),
 		domain:       cfg.Domain,
@@ -82,14 +81,17 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 			k.ntpServers = append(k.ntpServers, ip)
 		}
 	}
-	k.seedStaticLeases(cfg.StaticLeases)
+	k.configPools = k.seedConfigSubnets(cfg.Subnets)
 	if err := k.seedFromLeases(ctx); err != nil {
 		return nil, fmt.Errorf("failed to seed allocator from DHCPLeases: %w", err)
 	}
 	return k, nil
 }
 
-func configPools(subnets []api.Subnet) []allocator.Pool {
+// seedConfigSubnets converts inline Subnet config entries into allocator Pools and seeds
+// each subnet's static leases. Gateway and bootURL for static entries come directly from
+// the parent subnet — no pool scan needed.
+func (k *K8sClient) seedConfigSubnets(subnets []api.Subnet) []allocator.Pool {
 	pools := make([]allocator.Pool, 0, len(subnets))
 	for _, s := range subnets {
 		var lt time.Duration
@@ -100,22 +102,24 @@ func configPools(subnets []api.Subnet) []allocator.Pool {
 				log.Warningf("Ignoring invalid leaseTime %q for subnet %s: %v", s.LeaseTime, s.CIDR, err)
 			}
 		}
-		pools = append(pools, allocator.Pool{
+		pool := allocator.Pool{
 			CIDR:       s.CIDR,
 			Gateway:    s.Gateway,
 			RangeStart: s.RangeStart,
 			RangeEnd:   s.RangeEnd,
 			BootURL:    s.BootURL,
 			LeaseTime:  lt,
-		})
+		}
+		pools = append(pools, pool)
+		k.seedStaticLeases(s.StaticLeases, pool.Gateway, pool.BootURL)
 	}
 	return pools
 }
 
-// seedStaticLeases registers static MAC→IP bindings, preventing dynamic allocation from
-// handing those addresses to other clients. It also pre-computes gateway/bootURL by
-// looking up which config pool (if any) contains each static IP.
-func (k *K8sClient) seedStaticLeases(leases []api.StaticLease) {
+// seedStaticLeases registers static MAC→IP bindings into the allocator and statics map.
+// gateway and bootURL are passed directly from the parent subnet — no pool scan needed.
+// Already-seen MAC keys are skipped so this is safe to call on every request for CR-based subnets.
+func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL string) {
 	for _, sl := range leases {
 		mac, err := net.ParseMAC(sl.MAC)
 		if err != nil {
@@ -128,17 +132,11 @@ func (k *K8sClient) seedStaticLeases(leases []api.StaticLease) {
 			continue
 		}
 		macKey := helper.NormalizeMAC(mac)
-		k.alloc.Reserve(macKey, ip)
-
-		entry := staticEntry{ip: ip.To4(), hostname: sl.Hostname}
-		for _, p := range k.configPools {
-			if helper.CheckIPInCIDR(ip, p.CIDR, log) {
-				entry.gateway = p.Gateway
-				entry.bootURL = p.BootURL
-				break
-			}
+		if _, ok := k.statics[macKey]; ok {
+			continue
 		}
-		k.statics[macKey] = entry
+		k.alloc.Reserve(macKey, ip)
+		k.statics[macKey] = staticEntry{ip: ip.To4(), gateway: gateway, bootURL: bootURL, hostname: sl.Hostname}
 		log.Infof("Static lease: MAC %s → %s", sl.MAC, sl.IP)
 	}
 }
@@ -245,6 +243,13 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			BootURL:    s.Spec.BootURL,
 			LeaseTime:  lt,
 		})
+		if len(s.Spec.StaticLeases) > 0 {
+			leases := make([]api.StaticLease, len(s.Spec.StaticLeases))
+			for i, sl := range s.Spec.StaticLeases {
+				leases[i] = api.StaticLease{MAC: sl.MAC, IP: sl.IP, Hostname: sl.Hostname}
+			}
+			k.seedStaticLeases(leases, s.Spec.Gateway, s.Spec.BootURL)
+		}
 	}
 	return pools, nil
 }

@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
+# SPDX-License-Identifier: Apache-2.0
+{{- if and .Values.webhook.enabled .Values.webhook.certManager.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "metaldhcp.fullname" . }}-webhook
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "metaldhcp.fullname" . }}-webhook
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaldhcp.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "metaldhcp.fullname" . }}.{{ .Values.namespace }}.svc
+    - {{ include "metaldhcp.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ include "metaldhcp.fullname" . }}-webhook
+    kind: Issuer
+  secretName: {{ required "webhook.certSecretName is required when webhook.enabled" .Values.webhook.certSecretName }}
+{{- end }}

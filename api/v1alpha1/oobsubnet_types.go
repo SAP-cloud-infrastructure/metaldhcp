@@ -23,6 +23,22 @@ type OOBSubnet struct {
 	Spec OOBSubnetSpec `json:"spec,omitempty"`
 }
 
+// StaticLease pins a MAC address to a fixed IP within the subnet, bypassing dynamic allocation.
+type StaticLease struct {
+	// MAC is the hardware address of the client, e.g. "00:11:22:33:44:55".
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$`
+	MAC string `json:"mac"`
+
+	// IP is the fixed IPv4 address to offer to this MAC.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Format=ipv4
+	IP string `json:"ip"`
+
+	// Hostname is the optional hostname to include in the DHCP offer (option 12).
+	Hostname string `json:"hostname,omitempty"`
+}
+
 type OOBSubnetSpec struct {
 	// CIDR is the IPv4 network from which addresses are allocated, e.g. "10.0.1.0/24".
 	// +kubebuilder:validation:Required
@@ -43,6 +59,9 @@ type OOBSubnetSpec struct {
 	// BootURL, when set, is sent as the DHCP boot file URL (BootFileName field) in
 	// the offer/ack. Used for per-pool UEFI HTTP boot or iPXE chain-loading.
 	BootURL string `json:"bootURL,omitempty"`
+
+	// StaticLeases pins specific MACs to fixed IPs within this subnet, bypassing dynamic allocation.
+	StaticLeases []StaticLease `json:"staticLeases,omitempty"`
 }
 
 // +kubebuilder:object:root=true

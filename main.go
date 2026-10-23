@@ -49,13 +49,17 @@ var (
 )
 
 func main() {
-	var configFile, logLevel, healthAddr string
-	var listPlugins bool
+	var configFile, logLevel, healthAddr, webhookAddr, webhookCert, webhookKey string
+	var listPlugins, webhookEnabled bool
 
 	flag.StringVar(&configFile, "config", "", "config file")
 	flag.BoolVar(&listPlugins, "list-plugins", false, "list plugins")
 	flag.StringVar(&logLevel, "loglevel", "info", "log level (debug, info, warning, error, fatal, panic)")
 	flag.StringVar(&healthAddr, "health-addr", ":8080", "address for the /healthz HTTP endpoint")
+	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "enable the OOBSubnet validating webhook server")
+	flag.StringVar(&webhookAddr, "webhook-addr", ":9443", "address for the webhook HTTPS endpoint")
+	flag.StringVar(&webhookCert, "webhook-cert", "", "path to TLS certificate file for the webhook server")
+	flag.StringVar(&webhookKey, "webhook-key", "", "path to TLS key file for the webhook server")
 	flag.Parse()
 
 	if listPlugins {
@@ -63,6 +67,12 @@ func main() {
 			fmt.Println(p.Name)
 		}
 		os.Exit(0)
+	}
+
+	if webhookEnabled {
+		if webhookCert == "" || webhookKey == "" {
+			log.Fatalf("--webhook-enabled requires --webhook-cert and --webhook-key to be set")
+		}
 	}
 
 	level, err := logrus.ParseLevel(logLevel)
@@ -100,6 +110,17 @@ func main() {
 			log.Errorf("Health server error: %v", err)
 		}
 	}()
+
+	if webhookEnabled {
+		go func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/validate-oobsubnet", webhookHandler)
+			if err := http.ListenAndServeTLS(webhookAddr, webhookCert, webhookKey, mux); err != nil {
+				log.Fatalf("Webhook server error: %v", err)
+			}
+		}()
+		log.Infof("Webhook server listening on %s", webhookAddr)
+	}
 
 	srv, err := server.Start(cfg)
 	if err != nil {

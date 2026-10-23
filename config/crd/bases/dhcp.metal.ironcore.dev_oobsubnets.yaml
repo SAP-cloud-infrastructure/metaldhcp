@@ -75,6 +75,31 @@ spec:
                   RangeStart and RangeEnd optionally narrow allocation to a window within CIDR
                   (inclusive). When unset the whole usable host range is used.
                 type: string
+              staticLeases:
+                description: StaticLeases pins specific MACs to fixed IPs within this
+                  subnet, bypassing dynamic allocation.
+                items:
+                  description: StaticLease pins a MAC address to a fixed IP within
+                    the subnet, bypassing dynamic allocation.
+                  properties:
+                    hostname:
+                      description: Hostname is the optional hostname to include in
+                        the DHCP offer (option 12).
+                      type: string
+                    ip:
+                      description: IP is the fixed IPv4 address to offer to this MAC.
+                      format: ipv4
+                      type: string
+                    mac:
+                      description: MAC is the hardware address of the client, e.g.
+                        "00:11:22:33:44:55".
+                      pattern: ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$
+                      type: string
+                  required:
+                  - ip
+                  - mac
+                  type: object
+                type: array
             required:
             - cidr
             type: object
