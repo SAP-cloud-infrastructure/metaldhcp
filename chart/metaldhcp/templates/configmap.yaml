@@ -49,6 +49,15 @@ data:
         {{- if .bootURL }}
         bootURL: {{ .bootURL }}
         {{- end }}
+        {{- with .dnsServers }}
+        dnsServers:
+          {{- range . }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
+        {{- if .domain }}
+        domain: {{ .domain }}
+        {{- end }}
         {{- with .staticLeases }}
         staticLeases:
           {{- range . }}

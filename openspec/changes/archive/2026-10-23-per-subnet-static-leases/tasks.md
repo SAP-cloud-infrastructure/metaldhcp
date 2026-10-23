@@ -36,11 +36,11 @@
 
 ## 7. Per-subnet DNS servers and domain
 
-- [ ] 7.1 Add `DNSServers []string` and `Domain string` to `internal/api/config.go` `Subnet` struct (global fields on `OOBConfig` remain as fallback); add `DNSServers []net.IP` and `Domain string` to `allocator.Pool` and `staticEntry`; propagate from `seedConfigSubnets`; in `handler4` use subnet-level DNS/domain when non-empty, else fall back to `k.dnsServers`/`k.domain`; verify `go build ./...` passes.
-- [ ] 7.2 Add `DNSServers []string` and `Domain string` to `OOBSubnetSpec` in `api/v1alpha1/oobsubnet_types.go`; run `make manifests` and `make generate`; propagate from `oobSubnetPools` into Pool and staticEntry; verify `go build ./...` passes.
-- [ ] 7.3 Add `plugin_test.go` tests: subnet with `DNSServers`/`Domain` override → OFFER carries subnet values; subnet without override → OFFER carries global values; verify `go test ./plugins/oob/...` passes.
-- [ ] 7.4 Update Helm `configmap.yaml` to render `dnsServers` and `domain` per subnet when set; verify `helm template` renders correctly with and without per-subnet overrides.
-- [ ] 7.5 Run `go test ./...` and `make manifests`; confirm all tests pass and CRD YAML is up-to-date.
+- [x] 7.1 Add `DNSServers []string` and `Domain string` to `internal/api/config.go` `Subnet` struct (global fields on `OOBConfig` remain as fallback); add `DNSServers []net.IP` and `Domain string` to `allocator.Pool` and `staticEntry`; propagate from `seedConfigSubnets`; in `handler4` use subnet-level DNS/domain when non-empty, else fall back to `k.dnsServers`/`k.domain`; verify `go build ./...` passes.
+- [x] 7.2 Add `DNSServers []string` and `Domain string` to `OOBSubnetSpec` in `api/v1alpha1/oobsubnet_types.go`; run `make manifests` and `make generate`; propagate from `oobSubnetPools` into Pool and staticEntry; verify `go build ./...` passes.
+- [x] 7.3 Add `plugin_test.go` tests: subnet with `DNSServers`/`Domain` override → OFFER carries subnet values; subnet without override → OFFER carries global values; verify `go test ./plugins/oob/...` passes.
+- [x] 7.4 Update Helm `configmap.yaml` to render `dnsServers` and `domain` per subnet when set; verify `helm template` renders correctly with and without per-subnet overrides.
+- [x] 7.5 Run `go test ./...` and `make manifests`; confirm all tests pass and CRD YAML is up-to-date.
 
 ## Workflow follow-up
 

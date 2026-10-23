@@ -62,6 +62,14 @@ type OOBSubnetSpec struct {
 
 	// StaticLeases pins specific MACs to fixed IPs within this subnet, bypassing dynamic allocation.
 	StaticLeases []StaticLease `json:"staticLeases,omitempty"`
+
+	// DNSServers overrides the global DNS server list (option 6) for clients in this subnet.
+	// When empty the global dnsServers value applies.
+	DNSServers []string `json:"dnsServers,omitempty"`
+
+	// Domain overrides the global DNS search domain (option 15) for clients in this subnet.
+	// When empty the global domain value applies.
+	Domain string `json:"domain,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -170,10 +170,13 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	var leaseIP net.IP
 	var gateway, bootURL, hostname string
 	var poolLeaseTime time.Duration
+	var subnetDNS []net.IP
+	var subnetDomain string
 
 	if entry, ok := k.lookupStaticLease(macKey); ok {
 		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
+		subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 	} else {
 		log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t)",
 			mac, poolHint, allocHint, exactIP)
@@ -189,7 +192,13 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		// entry's hostname, gateway, and bootURL are used even on the first request.
 		if entry, ok := k.lookupStaticLease(macKey); ok {
 			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
+			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 			poolLeaseTime = 0
+		} else {
+			pool, _ := k.selectPool(ctx, poolHint)
+			if pool != nil {
+				subnetDNS, subnetDomain = pool.DNSServers, pool.Domain
+			}
 		}
 	}
 
@@ -203,16 +212,24 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if gw := net.ParseIP(gateway); gw != nil {
 		resp.Options.Update(dhcpv4.OptRouter(gw))
 	}
-	if len(k.dnsServers) > 0 {
-		resp.Options.Update(dhcpv4.OptDNS(k.dnsServers...))
+	effectiveDNS := subnetDNS
+	if len(effectiveDNS) == 0 {
+		effectiveDNS = k.dnsServers
 	}
-	if k.domain != "" {
-		resp.Options.Update(dhcpv4.OptDomainName(k.domain))
+	if len(effectiveDNS) > 0 {
+		resp.Options.Update(dhcpv4.OptDNS(effectiveDNS...))
+	}
+	effectiveDomain := subnetDomain
+	if effectiveDomain == "" {
+		effectiveDomain = k.domain
+	}
+	if effectiveDomain != "" {
+		resp.Options.Update(dhcpv4.OptDomainName(effectiveDomain))
 	}
 	if len(k.ntpServers) > 0 {
 		resp.Options.Update(dhcpv4.OptNTPServers(k.ntpServers...))
 	}
-	log.Debugf("  dns=%v domain=%q ntp=%v", k.dnsServers, k.domain, k.ntpServers)
+	log.Debugf("  dns=%v domain=%q ntp=%v", effectiveDNS, effectiveDomain, k.ntpServers)
 	if hostname != "" {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}

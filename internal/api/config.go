@@ -24,6 +24,8 @@ type Subnet struct {
 	LeaseTime    string        `yaml:"leaseTime"`
 	BootURL      string        `yaml:"bootURL"`
 	StaticLeases []StaticLease `yaml:"staticLeases,omitempty"`
+	DNSServers   []string      `yaml:"dnsServers,omitempty"`
+	Domain       string        `yaml:"domain,omitempty"`
 }
 
 type OOBConfig struct {

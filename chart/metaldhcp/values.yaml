@@ -43,6 +43,10 @@ oob:
   #   rangeEnd: 192.168.10.200
   #   leaseTime: 24h
   #   bootURL: https://boot-operator.example.com/boot
+  #   # dnsServers and domain override the global values for clients in this subnet.
+  #   dnsServers:
+  #   - 1.1.1.1
+  #   domain: subnet.example.com
   #   staticLeases:
   #   - mac: "aa:bb:cc:dd:ee:ff"
   #     ip: 192.168.10.200

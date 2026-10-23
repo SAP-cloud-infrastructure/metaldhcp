@@ -656,4 +656,55 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out.DomainName()).To(Equal("example.com"))
 		Expect(ipStrs(dhcpv4.GetIPs(dhcpv4.OptionNTPServers, out.Options))).To(ConsistOf("132.163.96.1"))
 	})
+
+	It("uses per-subnet DNS and domain when set, falling back to global for other subnets", func(ctx SpecContext) {
+		const (
+			cidrOverride = "10.31.0.0/24"
+			cidrFallback = "10.32.0.0/24"
+		)
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{
+				{
+					CIDR:       cidrOverride,
+					Gateway:    "10.31.0.1",
+					DNSServers: []string{"1.1.1.1", "1.0.0.1"},
+					Domain:     "override.example.com",
+				},
+				{
+					CIDR:    cidrFallback,
+					Gateway: "10.32.0.1",
+				},
+			},
+			DNSServers: []string{"8.8.8.8", "8.8.4.4"},
+			Domain:     "global.example.com",
+		})
+
+		ipStrs := func(ips []net.IP) []string {
+			s := make([]string, len(ips))
+			for i, ip := range ips {
+				s[i] = ip.String()
+			}
+			return s
+		}
+
+		mac1, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac1)
+		req1, resp1 := discoverRelay(mac1, net.ParseIP("10.31.0.1"))
+		out1, drop1 := h(req1, resp1)
+		Expect(drop1).To(BeFalse())
+		Expect(out1).NotTo(BeNil())
+		Expect(ipStrs(dhcpv4.GetIPs(dhcpv4.OptionDomainNameServer, out1.Options))).To(ConsistOf("1.1.1.1", "1.0.0.1"), "subnet override DNS")
+		Expect(out1.DomainName()).To(Equal("override.example.com"), "subnet override domain")
+
+		mac2, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac2)
+		req2, resp2 := discoverRelay(mac2, net.ParseIP("10.32.0.1"))
+		out2, drop2 := h(req2, resp2)
+		Expect(drop2).To(BeFalse())
+		Expect(out2).NotTo(BeNil())
+		Expect(ipStrs(dhcpv4.GetIPs(dhcpv4.OptionDomainNameServer, out2.Options))).To(ConsistOf("8.8.8.8", "8.8.4.4"), "global fallback DNS")
+		Expect(out2.DomainName()).To(Equal("global.example.com"), "global fallback domain")
+	})
 })

@@ -46,10 +46,12 @@ func SetRecorder(r record.EventRecorder, pod *corev1.Pod) {
 }
 
 type staticEntry struct {
-	ip       net.IP
-	gateway  string
-	bootURL  string
-	hostname string
+	ip         net.IP
+	gateway    string
+	bootURL    string
+	hostname   string
+	dnsServers []net.IP
+	domain     string
 }
 
 type K8sClient struct {
@@ -102,6 +104,12 @@ func (k *K8sClient) seedConfigSubnets(subnets []api.Subnet) []allocator.Pool {
 				log.Warningf("Ignoring invalid leaseTime %q for subnet %s: %v", s.LeaseTime, s.CIDR, err)
 			}
 		}
+		var dns []net.IP
+		for _, srv := range s.DNSServers {
+			if ip := net.ParseIP(srv); ip != nil {
+				dns = append(dns, ip)
+			}
+		}
 		pool := allocator.Pool{
 			CIDR:       s.CIDR,
 			Gateway:    s.Gateway,
@@ -109,17 +117,19 @@ func (k *K8sClient) seedConfigSubnets(subnets []api.Subnet) []allocator.Pool {
 			RangeEnd:   s.RangeEnd,
 			BootURL:    s.BootURL,
 			LeaseTime:  lt,
+			DNSServers: dns,
+			Domain:     s.Domain,
 		}
 		pools = append(pools, pool)
-		k.seedStaticLeases(s.StaticLeases, pool.Gateway, pool.BootURL)
+		k.seedStaticLeases(s.StaticLeases, pool.Gateway, pool.BootURL, dns, s.Domain)
 	}
 	return pools
 }
 
 // seedStaticLeases registers static MAC→IP bindings into the allocator and statics map.
-// gateway and bootURL are passed directly from the parent subnet — no pool scan needed.
+// gateway, bootURL, dnsServers, and domain are passed directly from the parent subnet.
 // Already-seen MAC keys are skipped so this is safe to call on every request for CR-based subnets.
-func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL string) {
+func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL string, dnsServers []net.IP, domain string) {
 	for _, sl := range leases {
 		mac, err := net.ParseMAC(sl.MAC)
 		if err != nil {
@@ -136,7 +146,7 @@ func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL 
 			continue
 		}
 		k.alloc.Reserve(macKey, ip)
-		k.statics[macKey] = staticEntry{ip: ip.To4(), gateway: gateway, bootURL: bootURL, hostname: sl.Hostname}
+		k.statics[macKey] = staticEntry{ip: ip.To4(), gateway: gateway, bootURL: bootURL, hostname: sl.Hostname, dnsServers: dnsServers, domain: domain}
 		log.Infof("Static lease: MAC %s → %s", sl.MAC, sl.IP)
 	}
 }
@@ -235,6 +245,12 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 		if s.Spec.LeaseTime != nil {
 			lt = s.Spec.LeaseTime.Duration
 		}
+		var dns []net.IP
+		for _, srv := range s.Spec.DNSServers {
+			if ip := net.ParseIP(srv); ip != nil {
+				dns = append(dns, ip)
+			}
+		}
 		pools = append(pools, allocator.Pool{
 			CIDR:       s.Spec.CIDR,
 			Gateway:    s.Spec.Gateway,
@@ -242,13 +258,15 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			RangeEnd:   s.Spec.RangeEnd,
 			BootURL:    s.Spec.BootURL,
 			LeaseTime:  lt,
+			DNSServers: dns,
+			Domain:     s.Spec.Domain,
 		})
 		if len(s.Spec.StaticLeases) > 0 {
 			leases := make([]api.StaticLease, len(s.Spec.StaticLeases))
 			for i, sl := range s.Spec.StaticLeases {
 				leases[i] = api.StaticLease{MAC: sl.MAC, IP: sl.IP, Hostname: sl.Hostname}
 			}
-			k.seedStaticLeases(leases, s.Spec.Gateway, s.Spec.BootURL)
+			k.seedStaticLeases(leases, s.Spec.Gateway, s.Spec.BootURL, dns, s.Spec.Domain)
 		}
 	}
 	return pools, nil

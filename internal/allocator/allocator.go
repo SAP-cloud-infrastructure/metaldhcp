@@ -72,6 +72,8 @@ type Pool struct {
 	RangeEnd   string        // optional upper bound (inclusive)
 	BootURL    string        // optional UEFI HTTP boot URL sent as DHCP BootFileName
 	LeaseTime  time.Duration // optional per-pool override; 0 means use the global lease_time plugin
+	DNSServers []net.IP      // optional per-subnet DNS servers; nil means use global
+	Domain     string        // optional per-subnet search domain; "" means use global
 }
 
 // Allocate returns the IPv4 address for macKey within pool. It returns the MAC's

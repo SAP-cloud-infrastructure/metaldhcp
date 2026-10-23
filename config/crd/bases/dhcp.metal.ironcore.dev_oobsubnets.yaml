@@ -59,6 +59,18 @@ spec:
                 description: CIDR is the IPv4 network from which addresses are allocated,
                   e.g. "10.0.1.0/24".
                 type: string
+              dnsServers:
+                description: |-
+                  DNSServers overrides the global DNS server list (option 6) for clients in this subnet.
+                  When empty the global dnsServers value applies.
+                items:
+                  type: string
+                type: array
+              domain:
+                description: |-
+                  Domain overrides the global DNS search domain (option 15) for clients in this subnet.
+                  When empty the global domain value applies.
+                type: string
               gateway:
                 description: Gateway, when set, is excluded from allocation and offered
                   as the router.
