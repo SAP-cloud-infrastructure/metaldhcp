@@ -34,6 +34,7 @@ RUN go mod download
 
 # Copy the go source
 COPY main.go main.go
+COPY webhook.go webhook.go
 COPY cmd/ cmd/
 COPY plugins/ plugins/
 COPY internal/ internal/

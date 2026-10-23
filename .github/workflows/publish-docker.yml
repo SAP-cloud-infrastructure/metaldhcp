@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build and publish Docker image
+name: Build and publish Docker images
 
 env:
   platforms: linux/amd64,linux/arm64
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   publish-docker:
-    name: Build and publish Docker image
+    name: Build and publish Docker images
     if: |
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ok-to-image')) ||
@@ -94,7 +94,7 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Build and push Docker image
+    - name: Build and push Docker image (metaldhcp)
       uses: docker/build-push-action@v7
       timeout-minutes: 10
       with:
