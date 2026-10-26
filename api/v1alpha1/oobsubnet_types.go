@@ -7,10 +7,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. It is
-// synced into the cluster by an external entity (the onboarding operator / NetBox
-// sync) and is read-only to metaldhcp. The oob plugin selects the subnet whose
-// CIDR matches the DHCP relay/link information and allocates a free address from it.
+// OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. Each
+// instance selects subnets by label, allocates addresses from them, and optionally
+// filters by MAC allowlist or delays offers to let other instances respond first.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
@@ -70,6 +69,25 @@ type OOBSubnetSpec struct {
 	// Domain overrides the global DNS search domain (option 15) for clients in this subnet.
 	// When empty the global domain value applies.
 	Domain string `json:"domain,omitempty"`
+
+	// AllowMacs, when non-empty, restricts DHCP responses to requests whose chaddr
+	// is listed here. Requests from any other MAC are silently dropped.
+	// When empty and AllowAllMacs is false, all requests are dropped.
+	// +kubebuilder:validation:Optional
+	AllowMacs []string `json:"allowMacs,omitempty"`
+
+	// ResponseDelay, when non-zero, delays the DHCP offer by the given duration.
+	// Use on catch-all / fallback instances so that instances with an AllowMacs
+	// filter can win the race on shared BMC subnets.
+	// +kubebuilder:validation:Optional
+	ResponseDelay *metav1.Duration `json:"responseDelay,omitempty"`
+
+	// AllowAllMacs, when true, disables the allowMacs filter: the instance responds to
+	// DHCP requests from any MAC for this subnet. Intended for dev/debug environments
+	// only. When false (the default), requests from MACs not in AllowMacs are silently
+	// dropped, and subnets with an empty AllowMacs are also fully silent.
+	// +kubebuilder:validation:Optional
+	AllowAllMacs bool `json:"allowAllMacs,omitempty"`
 }
 
 // +kubebuilder:object:root=true

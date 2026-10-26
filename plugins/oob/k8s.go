@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	metaldhcpv1alpha1 "github.com/SAP-cloud-infrastructure/metaldhcp/api/v1alpha1"
@@ -22,6 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+const annotationManagedBy = "dhcp.metal.ironcore.dev/managed-by"
 
 // allocationError carries a structured event reason alongside the underlying error so
 // handler4 can emit the right Kubernetes Event reason without string matching.
@@ -57,7 +60,6 @@ type staticEntry struct {
 type K8sClient struct {
 	Client       client.Client
 	SubnetLabels []api.SubnetLabel
-	configPools  []allocator.Pool
 	alloc        *allocator.Allocator
 	statics      map[string]staticEntry // normalized MAC key -> static binding
 	dnsServers   []net.IP
@@ -83,47 +85,124 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 			k.ntpServers = append(k.ntpServers, ip)
 		}
 	}
-	k.configPools = k.seedConfigSubnets(cfg.Subnets)
+	if err := k.bootstrapConfigSubnets(ctx, cfg.Subnets); err != nil {
+		return nil, fmt.Errorf("failed to bootstrap config subnets: %w", err)
+	}
 	if err := k.seedFromLeases(ctx); err != nil {
 		return nil, fmt.Errorf("failed to seed allocator from DHCPLeases: %w", err)
 	}
 	return k, nil
 }
 
-// seedConfigSubnets converts inline Subnet config entries into allocator Pools and seeds
-// each subnet's static leases. Gateway and bootURL for static entries come directly from
-// the parent subnet — no pool scan needed.
-func (k *K8sClient) seedConfigSubnets(subnets []api.Subnet) []allocator.Pool {
-	pools := make([]allocator.Pool, 0, len(subnets))
-	for _, s := range subnets {
-		var lt time.Duration
-		if s.LeaseTime != "" {
-			if d, err := time.ParseDuration(s.LeaseTime); err == nil {
-				lt = d
-			} else {
-				log.Warningf("Ignoring invalid leaseTime %q for subnet %s: %v", s.LeaseTime, s.CIDR, err)
-			}
-		}
-		var dns []net.IP
-		for _, srv := range s.DNSServers {
-			if ip := net.ParseIP(srv); ip != nil {
-				dns = append(dns, ip)
-			}
-		}
-		pool := allocator.Pool{
-			CIDR:       s.CIDR,
-			Gateway:    s.Gateway,
-			RangeStart: s.RangeStart,
-			RangeEnd:   s.RangeEnd,
-			BootURL:    s.BootURL,
-			LeaseTime:  lt,
-			DNSServers: dns,
-			Domain:     s.Domain,
-		}
-		pools = append(pools, pool)
-		k.seedStaticLeases(s.StaticLeases, pool.Gateway, pool.BootURL, dns, s.Domain)
+// cidrToCRName returns a deterministic Kubernetes object name for a config-bootstrapped
+// OOBSubnet CR, e.g. "oob-10-0-1-0-24" for "10.0.1.0/24".
+func cidrToCRName(cidr string) string {
+	return "oob-" + strings.NewReplacer(".", "-", "/", "-").Replace(cidr)
+}
+
+// bootstrapConfigSubnets syncs inline config subnets to OOBSubnet CRs at startup.
+// Three-way logic per subnet CIDR:
+//   - no CR with that CIDR → create one with annotation managed-by: helm
+//   - CR with annotation → update from current config values
+//   - CR without annotation (external/netbox) → leave unchanged
+func (k *K8sClient) bootstrapConfigSubnets(ctx context.Context, subnets []api.Subnet) error {
+	if len(subnets) == 0 {
+		return nil
 	}
-	return pools
+
+	// list all existing CRs to build a CIDR → CR map (handles any naming convention)
+	list := &metaldhcpv1alpha1.OOBSubnetList{}
+	if err := k.Client.List(ctx, list); err != nil {
+		return fmt.Errorf("failed to list OOBSubnets: %w", err)
+	}
+	byCIDR := make(map[string]*metaldhcpv1alpha1.OOBSubnet, len(list.Items))
+	for i := range list.Items {
+		byCIDR[list.Items[i].Spec.CIDR] = &list.Items[i]
+	}
+
+	for _, s := range subnets {
+		if err := k.bootstrapSubnet(ctx, s, byCIDR[s.CIDR]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (k *K8sClient) bootstrapSubnet(ctx context.Context, s api.Subnet, existing *metaldhcpv1alpha1.OOBSubnet) error {
+	if existing == nil {
+		cr := &metaldhcpv1alpha1.OOBSubnet{
+			ObjectMeta: metav1.ObjectMeta{Name: cidrToCRName(s.CIDR)},
+		}
+		k.applyConfigToCR(s, cr)
+		if err := k.Client.Create(ctx, cr); err != nil {
+			return fmt.Errorf("failed to bootstrap OOBSubnet for CIDR %s: %w", s.CIDR, err)
+		}
+		log.Infof("Bootstrapped OOBSubnet %s from config", cr.Name)
+		return nil
+	}
+
+	if existing.Annotations[annotationManagedBy] != "helm" {
+		log.Infof("Skipping OOBSubnet %s (CIDR %s): not managed-by helm", existing.Name, s.CIDR)
+		return nil
+	}
+
+	patch := client.MergeFrom(existing.DeepCopy())
+	k.applyConfigToCR(s, existing)
+	if err := k.Client.Patch(ctx, existing, patch); err != nil {
+		return fmt.Errorf("failed to update OOBSubnet %s: %w", existing.Name, err)
+	}
+	log.Infof("Updated OOBSubnet %s from config", existing.Name)
+	return nil
+}
+
+// applyConfigToCR writes all fields from a config Subnet onto an OOBSubnet CR, including
+// the managed-by annotation and any SubnetLabels so the CR is found by oobSubnetPools.
+func (k *K8sClient) applyConfigToCR(s api.Subnet, cr *metaldhcpv1alpha1.OOBSubnet) {
+	if cr.Labels == nil {
+		cr.Labels = make(map[string]string, len(k.SubnetLabels))
+	}
+	for _, l := range k.SubnetLabels {
+		cr.Labels[l.Key] = l.Value
+	}
+	if cr.Annotations == nil {
+		cr.Annotations = make(map[string]string)
+	}
+	cr.Annotations[annotationManagedBy] = "helm"
+
+	var lt *metav1.Duration
+	if s.LeaseTime != "" {
+		if d, err := time.ParseDuration(s.LeaseTime); err == nil {
+			lt = &metav1.Duration{Duration: d}
+		} else {
+			log.Warningf("Ignoring invalid leaseTime %q for subnet %s: %v", s.LeaseTime, s.CIDR, err)
+		}
+	}
+	var rd *metav1.Duration
+	if s.ResponseDelay != "" {
+		if d, err := time.ParseDuration(s.ResponseDelay); err == nil {
+			rd = &metav1.Duration{Duration: d}
+		} else {
+			log.Warningf("Ignoring invalid responseDelay %q for subnet %s: %v", s.ResponseDelay, s.CIDR, err)
+		}
+	}
+	staticLeases := make([]metaldhcpv1alpha1.StaticLease, len(s.StaticLeases))
+	for i, sl := range s.StaticLeases {
+		staticLeases[i] = metaldhcpv1alpha1.StaticLease{MAC: sl.MAC, IP: sl.IP, Hostname: sl.Hostname}
+	}
+	cr.Spec = metaldhcpv1alpha1.OOBSubnetSpec{
+		CIDR:          s.CIDR,
+		Gateway:       s.Gateway,
+		RangeStart:    s.RangeStart,
+		RangeEnd:      s.RangeEnd,
+		LeaseTime:     lt,
+		BootURL:       s.BootURL,
+		StaticLeases:  staticLeases,
+		DNSServers:    s.DNSServers,
+		Domain:        s.Domain,
+		AllowMacs:     s.AllowMacs,
+		ResponseDelay: rd,
+		AllowAllMacs:  s.AllowAllMacs,
+	}
 }
 
 // seedStaticLeases registers static MAC→IP bindings into the allocator and statics map.
@@ -197,20 +276,16 @@ func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.Hardware
 	return leaseIP, pool.Gateway, pool.BootURL, pool.LeaseTime, nil
 }
 
-// selectPool returns the pool whose CIDR contains ipaddr, drawing from config-defined pools when
-// present, otherwise from labeled OOBSubnet CRs. When ipaddr carries no hint (0.0.0.0) it falls
-// back to the sole pool, erroring if the choice is ambiguous.
+// selectPool returns the pool whose CIDR contains ipaddr from labeled OOBSubnet CRs.
+// When ipaddr carries no hint (0.0.0.0) it falls back to the sole pool, erroring if
+// the choice is ambiguous.
 func (k *K8sClient) selectPool(ctx context.Context, ipaddr net.IP) (*allocator.Pool, error) {
-	pools := k.configPools
-	if len(pools) == 0 {
-		crPools, err := k.oobSubnetPools(ctx)
-		if err != nil {
-			return nil, err
-		}
-		pools = crPools
+	pools, err := k.oobSubnetPools(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if len(pools) == 0 {
-		return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("no pools configured and no OOBSubnets found")}
+		return nil, &allocationError{reason: "NoPoolFound", err: fmt.Errorf("no OOBSubnets found")}
 	}
 
 	if ipaddr == nil || ipaddr.IsUnspecified() {
@@ -245,6 +320,10 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 		if s.Spec.LeaseTime != nil {
 			lt = s.Spec.LeaseTime.Duration
 		}
+		var rd time.Duration
+		if s.Spec.ResponseDelay != nil {
+			rd = s.Spec.ResponseDelay.Duration
+		}
 		var dns []net.IP
 		for _, srv := range s.Spec.DNSServers {
 			if ip := net.ParseIP(srv); ip != nil {
@@ -252,14 +331,17 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			}
 		}
 		pools = append(pools, allocator.Pool{
-			CIDR:       s.Spec.CIDR,
-			Gateway:    s.Spec.Gateway,
-			RangeStart: s.Spec.RangeStart,
-			RangeEnd:   s.Spec.RangeEnd,
-			BootURL:    s.Spec.BootURL,
-			LeaseTime:  lt,
-			DNSServers: dns,
-			Domain:     s.Spec.Domain,
+			CIDR:          s.Spec.CIDR,
+			Gateway:       s.Spec.Gateway,
+			RangeStart:    s.Spec.RangeStart,
+			RangeEnd:      s.Spec.RangeEnd,
+			BootURL:       s.Spec.BootURL,
+			LeaseTime:     lt,
+			DNSServers:    dns,
+			Domain:        s.Spec.Domain,
+			AllowMacs:     s.Spec.AllowMacs,
+			ResponseDelay: rd,
+			AllowAllMacs:  s.Spec.AllowAllMacs,
 		})
 		if len(s.Spec.StaticLeases) > 0 {
 			leases := make([]api.StaticLease, len(s.Spec.StaticLeases))

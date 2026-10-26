@@ -15,17 +15,22 @@ type StaticLease struct {
 }
 
 // Subnet is an inline pool definition, managed via the deployment pipeline / Helm values. It
-// is the config-defined alternative to a synced OOBSubnet CR.
+// is the config-defined alternative to a synced OOBSubnet CR. At startup, each Subnet is
+// bootstrapped to an OOBSubnet CR annotated managed-by: helm; all runtime pool selection then
+// uses CRs exclusively.
 type Subnet struct {
-	CIDR         string        `yaml:"cidr"`
-	Gateway      string        `yaml:"gateway"`
-	RangeStart   string        `yaml:"rangeStart"`
-	RangeEnd     string        `yaml:"rangeEnd"`
-	LeaseTime    string        `yaml:"leaseTime"`
-	BootURL      string        `yaml:"bootURL"`
-	StaticLeases []StaticLease `yaml:"staticLeases,omitempty"`
-	DNSServers   []string      `yaml:"dnsServers,omitempty"`
-	Domain       string        `yaml:"domain,omitempty"`
+	CIDR          string        `yaml:"cidr"`
+	Gateway       string        `yaml:"gateway"`
+	RangeStart    string        `yaml:"rangeStart"`
+	RangeEnd      string        `yaml:"rangeEnd"`
+	LeaseTime     string        `yaml:"leaseTime"`
+	BootURL       string        `yaml:"bootURL"`
+	StaticLeases  []StaticLease `yaml:"staticLeases,omitempty"`
+	DNSServers    []string      `yaml:"dnsServers,omitempty"`
+	Domain        string        `yaml:"domain,omitempty"`
+	AllowMacs     []string      `yaml:"allowMacs,omitempty"`
+	ResponseDelay string        `yaml:"responseDelay,omitempty"` // parsed with time.ParseDuration at bootstrap
+	AllowAllMacs  bool          `yaml:"allowAllMacs,omitempty"`
 }
 
 type OOBConfig struct {
