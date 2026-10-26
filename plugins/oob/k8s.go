@@ -366,6 +366,8 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 		lease.Spec.Hostname = hostname
 		if leaseTime > 0 {
 			lease.Spec.LeaseTime = &metav1.Duration{Duration: leaseTime}
+			expires := metav1.NewTime(time.Now().Add(leaseTime))
+			lease.Spec.LeaseExpiresAt = &expires
 		}
 		if vendor != "" {
 			if lease.Annotations == nil {

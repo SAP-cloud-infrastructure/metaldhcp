@@ -20,6 +20,7 @@ import (
 // +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.spec.ip`
 // +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`
+// +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=`.spec.leaseExpiresAt`
 // +kubebuilder:printcolumn:name="Vendor",type=string,JSONPath=`.metadata.annotations['dhcp\.metal\.ironcore\.dev/vendor']`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.macAddress`
 // +kubebuilder:selectablefield:JSONPath=`.spec.ip`
@@ -49,6 +50,10 @@ type DHCPLeaseSpec struct {
 	// Hostname is the client hostname, either from option 12 in the request or from a
 	// static lease config entry.
 	Hostname string `json:"hostname,omitempty"`
+
+	// LeaseExpiresAt is the absolute time at which this lease expires (now + leaseTime at
+	// the moment the offer was sent). Updated on every re-lease.
+	LeaseExpiresAt *metav1.Time `json:"leaseExpiresAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true

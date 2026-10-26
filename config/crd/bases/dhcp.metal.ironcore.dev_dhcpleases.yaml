@@ -31,6 +31,9 @@ spec:
     - jsonPath: .spec.gateway
       name: Gateway
       type: string
+    - jsonPath: .spec.leaseExpiresAt
+      name: Expires
+      type: string
     - jsonPath: .metadata.annotations['dhcp\.metal\.ironcore\.dev/vendor']
       name: Vendor
       priority: 1
@@ -77,6 +80,12 @@ spec:
                   static lease config entry.
                 type: string
               ip:
+                type: string
+              leaseExpiresAt:
+                description: |-
+                  LeaseExpiresAt is the absolute time at which this lease expires (now + leaseTime at
+                  the moment the offer was sent). Updated on every re-lease.
+                format: date-time
                 type: string
               leaseTime:
                 description: LeaseTime is the lease duration offered for this address.
