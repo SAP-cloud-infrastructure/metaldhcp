@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
@@ -172,31 +173,54 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	var poolLeaseTime time.Duration
 	var subnetDNS []net.IP
 	var subnetDomain string
+	var responseDelay time.Duration
 
 	if entry, ok := k.lookupStaticLease(macKey); ok {
 		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 		subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 	} else {
-		log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t)",
-			mac, poolHint, allocHint, exactIP)
-		var err error
-		leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
-		if err != nil {
-			log.Infof("← DROP %s mac=%s%s: %s", req.MessageType(), mac, vendorTag(vendor), err)
-			k.emitEvent(mac, giaddr, vendor, err)
+		// Select pool once: used for the MAC filter and later for DNS/domain/responseDelay.
+		pool, poolErr := k.selectPool(ctx, poolHint)
+		if poolErr != nil {
+			log.Infof("← DROP %s mac=%s%s%s: %s", req.MessageType(), mac, vendorTag(vendor), classTag, poolErr)
+			k.emitEvent(mac, giaddr, vendor, poolErr)
 			return nil, true
 		}
-		hostname = requestHostname(req)
-		// getIP may have seeded CR-based statics into k.statics; re-check so the static
-		// entry's hostname, gateway, and bootURL are used even on the first request.
+
+		// selectPool/oobSubnetPools may have seeded CR-based static leases; re-check before
+		// the MAC filter so statically configured MACs always bypass the allowlist.
 		if entry, ok := k.lookupStaticLease(macKey); ok {
+			log.Debugf("Static lease (CR-seeded) for MAC %s → %s", mac, entry.ip)
 			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
-			poolLeaseTime = 0
 		} else {
-			pool, _ := k.selectPool(ctx, poolHint)
-			if pool != nil {
+			// MAC filter: deny-all by default. AllowAllMacs=true bypasses the check (dev/debug only).
+			if !pool.AllowAllMacs && !slices.Contains(pool.AllowMacs, macKey) {
+				log.Debugf("← DROP %s mac=%s: not in allowMacs for subnet %s (allowAllMacs=false)", req.MessageType(), mac, pool.CIDR)
+				return nil, true
+			}
+
+			responseDelay = pool.ResponseDelay
+
+			log.Debugf("Allocating for MAC %s (pool hint %s, alloc hint %s, exact %t)",
+				mac, poolHint, allocHint, exactIP)
+			var err error
+			leaseIP, gateway, bootURL, poolLeaseTime, err = k.getIP(ctx, poolHint, mac, allocHint, exactIP)
+			if err != nil {
+				log.Infof("← DROP %s mac=%s%s: %s", req.MessageType(), mac, vendorTag(vendor), err)
+				k.emitEvent(mac, giaddr, vendor, err)
+				return nil, true
+			}
+			hostname = requestHostname(req)
+			// getIP may have seeded additional CR-based statics; re-check so their hostname,
+			// gateway, and bootURL are used even on the first request.
+			if entry, ok := k.lookupStaticLease(macKey); ok {
+				leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
+				subnetDNS, subnetDomain = entry.dnsServers, entry.domain
+				poolLeaseTime = 0
+				responseDelay = 0 // static leases bypass pool delays
+			} else {
 				subnetDNS, subnetDomain = pool.DNSServers, pool.Domain
 			}
 		}
@@ -235,6 +259,10 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	}
 	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
 		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+	}
+
+	if responseDelay > 0 {
+		time.Sleep(responseDelay)
 	}
 
 	// iPXE phase 2: snponly.efi sends option 175 (iPXE encapsulated options) —

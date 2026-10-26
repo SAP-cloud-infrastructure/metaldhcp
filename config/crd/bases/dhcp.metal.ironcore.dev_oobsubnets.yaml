@@ -26,10 +26,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. It is
-          synced into the cluster by an external entity (the onboarding operator / NetBox
-          sync) and is read-only to metaldhcp. The oob plugin selects the subnet whose
-          CIDR matches the DHCP relay/link information and allocates a free address from it.
+          OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. Each
+          instance selects subnets by label, allocates addresses from them, and optionally
+          filters by MAC allowlist or delays offers to let other instances respond first.
         properties:
           apiVersion:
             description: |-
@@ -50,6 +49,21 @@ spec:
             type: object
           spec:
             properties:
+              allowAllMacs:
+                description: |-
+                  AllowAllMacs, when true, disables the allowMacs filter: the instance responds to
+                  DHCP requests from any MAC for this subnet. Intended for dev/debug environments
+                  only. When false (the default), requests from MACs not in AllowMacs are silently
+                  dropped, and subnets with an empty AllowMacs are also fully silent.
+                type: boolean
+              allowMacs:
+                description: |-
+                  AllowMacs, when non-empty, restricts DHCP responses to requests whose chaddr
+                  is listed here. Requests from any other MAC are silently dropped.
+                  When empty and AllowAllMacs is false, all requests are dropped.
+                items:
+                  type: string
+                type: array
               bootURL:
                 description: |-
                   BootURL, when set, is sent as the DHCP boot file URL (BootFileName field) in
@@ -86,6 +100,12 @@ spec:
                 description: |-
                   RangeStart and RangeEnd optionally narrow allocation to a window within CIDR
                   (inclusive). When unset the whole usable host range is used.
+                type: string
+              responseDelay:
+                description: |-
+                  ResponseDelay, when non-zero, delays the DHCP offer by the given duration.
+                  Use on catch-all / fallback instances so that instances with an AllowMacs
+                  filter can win the race on shared BMC subnets.
                 type: string
               staticLeases:
                 description: StaticLeases pins specific MACs to fixed IPs within this
