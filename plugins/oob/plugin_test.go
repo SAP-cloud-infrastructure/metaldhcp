@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sclientset "k8s.io/client-go/kubernetes"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
@@ -382,6 +383,98 @@ var _ = Describe("OOB plugin handler4", func() {
 		out, drop := h(req, resp)
 		Expect(out).To(BeNil())
 		Expect(drop).To(BeTrue())
+	})
+
+	It("reclaims an expired lease's IP for a different MAC when a single-IP pool is used up", func(ctx SpecContext) {
+		// One assignable address (rangeStart == rangeEnd) and a very short lease, so the
+		// pool is full after the first client and only an expiry-based reclaim can free it.
+		// RED until dhcplease-expiry-reclamation is implemented (issue #10): today the
+		// expired lease is never reclaimed, so the second client is dropped.
+		// NOTE: once a configurable reclamation grace exists, set it short here; for now the
+		// lease time alone governs expiry.
+		const cidr = "10.44.99.0/24"
+		const onlyIP = "10.44.99.10"
+
+		h := buildPlugin(api.OOBConfig{
+			ReclaimGrace: "1s",
+			Subnets: []api.Subnet{{
+				CIDR:         cidr,
+				Gateway:      "10.44.99.1",
+				RangeStart:   onlyIP,
+				RangeEnd:     onlyIP,
+				LeaseTime:    "1s",
+				AllowAllMacs: true,
+			}},
+		})
+
+		macA, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(macA)
+		macB, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(macB)
+
+		// Client A takes the only address.
+		reqA, respA := discoverRelay(macA, net.ParseIP("10.44.99.1"))
+		outA, dropA := h(reqA, respA)
+		Expect(dropA).To(BeFalse())
+		Expect(outA).NotTo(BeNil())
+		Expect(outA.YourIPAddr.String()).To(Equal(onlyIP))
+
+		// Let the lease expire.
+		time.Sleep(3 * time.Second)
+
+		// Client B (different MAC) should now get the reclaimed address.
+		reqB, respB := discoverRelay(macB, net.ParseIP("10.44.99.1"))
+		outB, dropB := h(reqB, respB)
+		Expect(dropB).To(BeFalse())
+		Expect(outB).NotTo(BeNil())
+		Expect(outB.YourIPAddr.String()).To(Equal(onlyIP), "expired IP must be reclaimed for the new MAC")
+
+		// One-CR-per-IP: A's stale lease is deleted, only B's remains for that address.
+		Eventually(func(g Gomega) {
+			list := &metaldhcpv1alpha1.DHCPLeaseList{}
+			g.Expect(crClient.List(ctx, list)).To(Succeed())
+			g.Expect(list.Items).To(HaveLen(1))
+			g.Expect(list.Items[0].Spec.MACAddress).To(Equal(macB.String()))
+			g.Expect(list.Items[0].Spec.IP).To(Equal(onlyIP))
+		}).Should(Succeed())
+	})
+
+	It("drops a duplicate-IP DHCPLease on startup, keeping the live one", func(ctx SpecContext) {
+		const dupIP = "10.44.98.10"
+		macA, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		macB, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(macA)
+		deferDeleteLease(macB)
+
+		// Two leases claim the same IP: A expired long ago, B is live.
+		past := metav1.NewTime(time.Now().Add(-time.Hour))
+		future := metav1.NewTime(time.Now().Add(time.Hour))
+		expired := &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(macA)},
+			Spec:       metaldhcpv1alpha1.DHCPLeaseSpec{MACAddress: macA.String(), IP: dupIP, LeaseExpiresAt: &past},
+		}
+		live := &metaldhcpv1alpha1.DHCPLease{
+			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(macB)},
+			Spec:       metaldhcpv1alpha1.DHCPLeaseSpec{MACAddress: macB.String(), IP: dupIP, LeaseExpiresAt: &future},
+		}
+		Expect(crClient.Create(ctx, expired)).To(Succeed())
+		Expect(crClient.Create(ctx, live)).To(Succeed())
+
+		// buildPlugin seeds from the ledger and must resolve the duplicate on startup.
+		buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{CIDR: "10.44.98.0/24", Gateway: "10.44.98.1", AllowAllMacs: true}},
+		})
+
+		// The expired duplicate is deleted; the live lease is kept.
+		Eventually(func(g Gomega) {
+			err := crClient.Get(ctx, client.ObjectKeyFromObject(expired), &metaldhcpv1alpha1.DHCPLease{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expired duplicate should be deleted")
+		}).Should(Succeed())
+		Eventually(Object(live)).Should(HaveField("Spec.IP", dupIP))
 	})
 
 	It("sets BootFileName from pool bootURL when present", func(ctx SpecContext) {
