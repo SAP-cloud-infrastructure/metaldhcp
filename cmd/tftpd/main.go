@@ -36,7 +36,7 @@ func readHandler(root string) func(string, io.ReaderFrom) error {
 			log.Warnf("tftp: %s: %v", filename, err)
 			return err
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		n, err := rf.ReadFrom(f)
 		if err != nil {
 			log.Warnf("tftp: sending %s: %v", filename, err)
