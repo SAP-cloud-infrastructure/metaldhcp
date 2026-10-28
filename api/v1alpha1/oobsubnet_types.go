@@ -70,24 +70,24 @@ type OOBSubnetSpec struct {
 	// When empty the global domain value applies.
 	Domain string `json:"domain,omitempty"`
 
-	// AllowMacs, when non-empty, restricts DHCP responses to requests whose chaddr
-	// is listed here. Requests from any other MAC are silently dropped.
-	// When empty and AllowAllMacs is false, all requests are dropped.
+	// Mode selects the MAC filter posture: allowAll serves every MAC (macList ignored),
+	// allow serves only MACs in macList (empty => serve nobody), deny serves every MAC
+	// except those in macList.
+	// +kubebuilder:validation:Enum=allowAll;allow;deny
+	// +kubebuilder:default=allowAll
+	Mode string `json:"mode,omitempty"`
+
+	// MacList is the MAC set the filter mode operates on. Entries may be colon-, dash-, or
+	// separator-free, any case; they are normalized before matching. Ignored when Mode is
+	// allowAll.
 	// +kubebuilder:validation:Optional
-	AllowMacs []string `json:"allowMacs,omitempty"`
+	MacList []string `json:"macList,omitempty"`
 
 	// ResponseDelay, when non-zero, delays the DHCP offer by the given duration.
-	// Use on catch-all / fallback instances so that instances with an AllowMacs
-	// filter can win the race on shared BMC subnets.
+	// Use on catch-all / fallback instances so that instances with a tighter filter
+	// can win the race on shared BMC subnets.
 	// +kubebuilder:validation:Optional
 	ResponseDelay *metav1.Duration `json:"responseDelay,omitempty"`
-
-	// AllowAllMacs, when true, disables the allowMacs filter: the instance responds to
-	// DHCP requests from any MAC for this subnet. Intended for dev/debug environments
-	// only. When false (the default), requests from MACs not in AllowMacs are silently
-	// dropped, and subnets with an empty AllowMacs are also fully silent.
-	// +kubebuilder:validation:Optional
-	AllowAllMacs bool `json:"allowAllMacs,omitempty"`
 }
 
 // +kubebuilder:object:root=true

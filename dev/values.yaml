@@ -29,7 +29,8 @@ oob:
       rangeEnd: 192.168.100.100
       leaseTime: 1h
       bootURL: https://boot-operator.example.com/boot
-      allowMacs:
+      mode: allow
+      macList:
         - "18:66:da:00:11:01"  # Dell
         - "10:c5:95:00:11:03"  # Lenovo
       staticLeases:
@@ -41,7 +42,8 @@ oob:
       rangeStart: 10.0.2.10
       rangeEnd: 10.0.2.100
       leaseTime: 1h
-      allowMacs:
+      mode: allow
+      macList:
         - "04:09:73:00:11:02"  # HPE
 
   dnsServers:

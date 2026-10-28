@@ -43,6 +43,11 @@ oob:
   #   rangeEnd: 192.168.10.200
   #   leaseTime: 24h
   #   bootURL: https://boot-operator.example.com/boot
+  #   # mode: allowAll (default, serve everyone) | allow (serve only macList) |
+  #   #       deny (serve all except macList). macList is ignored for allowAll.
+  #   mode: allow
+  #   macList:
+  #   - "18:66:da:00:11:01"
   #   # dnsServers and domain override the global values for clients in this subnet.
   #   dnsServers:
   #   - 1.1.1.1

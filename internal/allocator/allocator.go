@@ -103,9 +103,9 @@ type Pool struct {
 	LeaseTime     time.Duration // optional per-pool override; 0 means use the global lease_time plugin
 	DNSServers    []net.IP      // optional per-subnet DNS servers; nil means use global
 	Domain        string        // optional per-subnet search domain; "" means use global
-	AllowMacs     []string      // when non-empty, only these normalized MAC keys are answered
+	Mode          string        // MAC filter posture: allowAll | allow | deny ("" == allowAll)
+	MacList       []string      // MAC set the mode operates on; normalized before matching
 	ResponseDelay time.Duration // when non-zero, sleep this long before sending the offer
-	AllowAllMacs  bool          // when true, AllowMacs filter is bypassed (dev/debug only)
 }
 
 // Allocate returns the IPv4 address for macKey within pool, plus the MAC key of any expired

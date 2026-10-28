@@ -147,9 +147,9 @@ _Appears in:_
 | `staticLeases` _[StaticLease](#staticlease) array_ | StaticLeases pins specific MACs to fixed IPs within this subnet, bypassing dynamic allocation. |  |  |
 | `dnsServers` _string array_ | DNSServers overrides the global DNS server list (option 6) for clients in this subnet.<br />When empty the global dnsServers value applies. |  |  |
 | `domain` _string_ | Domain overrides the global DNS search domain (option 15) for clients in this subnet.<br />When empty the global domain value applies. |  |  |
-| `allowMacs` _string array_ | AllowMacs, when non-empty, restricts DHCP responses to requests whose chaddr<br />is listed here. Requests from any other MAC are silently dropped.<br />When empty and AllowAllMacs is false, all requests are dropped. |  | Optional: \{\} <br /> |
-| `responseDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | ResponseDelay, when non-zero, delays the DHCP offer by the given duration.<br />Use on catch-all / fallback instances so that instances with an AllowMacs<br />filter can win the race on shared BMC subnets. |  | Optional: \{\} <br /> |
-| `allowAllMacs` _boolean_ | AllowAllMacs, when true, disables the allowMacs filter: the instance responds to<br />DHCP requests from any MAC for this subnet. Intended for dev/debug environments<br />only. When false (the default), requests from MACs not in AllowMacs are silently<br />dropped, and subnets with an empty AllowMacs are also fully silent. |  | Optional: \{\} <br /> |
+| `mode` _string_ | Mode selects the MAC filter posture: allowAll serves every MAC (macList ignored),<br />allow serves only MACs in macList (empty => serve nobody), deny serves every MAC<br />except those in macList. | allowAll | Enum: [allowAll allow deny] <br /> |
+| `macList` _string array_ | MacList is the MAC set the filter mode operates on. Entries may be colon-, dash-, or<br />separator-free, any case; they are normalized before matching. Ignored when Mode is<br />allowAll. |  | Optional: \{\} <br /> |
+| `responseDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | ResponseDelay, when non-zero, delays the DHCP offer by the given duration.<br />Use on catch-all / fallback instances so that instances with a tighter filter<br />can win the race on shared BMC subnets. |  | Optional: \{\} <br /> |
 
 
 #### StaticLease

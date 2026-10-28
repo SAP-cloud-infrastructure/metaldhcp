@@ -68,14 +68,14 @@ data:
             {{- end }}
           {{- end }}
         {{- end }}
-        {{- with .allowMacs }}
-        allowMacs:
+        {{- if .mode }}
+        mode: {{ .mode }}
+        {{- end }}
+        {{- with .macList }}
+        macList:
           {{- range . }}
           - {{ . }}
           {{- end }}
-        {{- end }}
-        {{- if .allowAllMacs }}
-        allowAllMacs: true
         {{- end }}
         {{- if .responseDelay }}
         responseDelay: {{ .responseDelay }}

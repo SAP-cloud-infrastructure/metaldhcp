@@ -15,17 +15,34 @@ import (
 
 // ValidateCreate validates a new OOBSubnet.
 func (s *OOBSubnet) ValidateCreate() (admission.Warnings, error) {
-	return nil, s.validateStaticLeases()
+	return nil, s.validate()
 }
 
 // ValidateUpdate validates an updated OOBSubnet.
 func (s *OOBSubnet) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
-	return nil, s.validateStaticLeases()
+	return nil, s.validate()
 }
 
 // ValidateDelete is a no-op; deletions are always permitted.
 func (s *OOBSubnet) ValidateDelete() (admission.Warnings, error) {
 	return nil, nil
+}
+
+func (s *OOBSubnet) validate() error {
+	if err := s.validateFilterMode(); err != nil {
+		return err
+	}
+	return s.validateStaticLeases()
+}
+
+// validateFilterMode rejects a macList set together with allowAll, where it would be
+// silently ignored — this also catches a populated list left on the allowAll default.
+func (s *OOBSubnet) validateFilterMode() error {
+	if s.Spec.Mode == "allowAll" && len(s.Spec.MacList) > 0 {
+		return field.Invalid(field.NewPath("spec", "macList"), s.Spec.MacList,
+			"macList must be empty when mode is allowAll; use allow or deny")
+	}
+	return nil
 }
 
 func (s *OOBSubnet) validateStaticLeases() error {
