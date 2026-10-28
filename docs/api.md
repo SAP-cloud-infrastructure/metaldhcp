@@ -79,16 +79,16 @@ _Appears in:_
 | `leaseTime` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | LeaseTime is the lease duration offered for this address. Updated on re-lease. |  |  |
 | `clientID` _string_ | ClientID is the DHCPv4 client identifier (option 61) from the request, if present. |  |  |
 | `hostname` _string_ | Hostname is the client hostname, either from option 12 in the request or from a<br />static lease config entry. |  |  |
+| `leaseExpiresAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#time-v1-meta)_ | LeaseExpiresAt is the absolute time at which this lease expires (now + leaseTime at<br />the moment the offer was sent). Updated on every re-lease. |  |  |
 
 
 #### OOBSubnet
 
 
 
-OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. It is
-synced into the cluster by an external entity (the onboarding operator / NetBox
-sync) and is read-only to metaldhcp. The oob plugin selects the subnet whose
-CIDR matches the DHCP relay/link information and allocates a free address from it.
+OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. Each
+instance selects subnets by label, allocates addresses from them, and optionally
+filters by MAC allowlist or delays offers to let other instances respond first.
 
 
 
@@ -144,5 +144,29 @@ _Appears in:_
 | `rangeStart` _string_ | RangeStart and RangeEnd optionally narrow allocation to a window within CIDR<br />(inclusive). When unset the whole usable host range is used. |  |  |
 | `rangeEnd` _string_ |  |  |  |
 | `bootURL` _string_ | BootURL, when set, is sent as the DHCP boot file URL (BootFileName field) in<br />the offer/ack. Used for per-pool UEFI HTTP boot or iPXE chain-loading. |  |  |
+| `staticLeases` _[StaticLease](#staticlease) array_ | StaticLeases pins specific MACs to fixed IPs within this subnet, bypassing dynamic allocation. |  |  |
+| `dnsServers` _string array_ | DNSServers overrides the global DNS server list (option 6) for clients in this subnet.<br />When empty the global dnsServers value applies. |  |  |
+| `domain` _string_ | Domain overrides the global DNS search domain (option 15) for clients in this subnet.<br />When empty the global domain value applies. |  |  |
+| `allowMacs` _string array_ | AllowMacs, when non-empty, restricts DHCP responses to requests whose chaddr<br />is listed here. Requests from any other MAC are silently dropped.<br />When empty and AllowAllMacs is false, all requests are dropped. |  | Optional: \{\} <br /> |
+| `responseDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | ResponseDelay, when non-zero, delays the DHCP offer by the given duration.<br />Use on catch-all / fallback instances so that instances with an AllowMacs<br />filter can win the race on shared BMC subnets. |  | Optional: \{\} <br /> |
+| `allowAllMacs` _boolean_ | AllowAllMacs, when true, disables the allowMacs filter: the instance responds to<br />DHCP requests from any MAC for this subnet. Intended for dev/debug environments<br />only. When false (the default), requests from MACs not in AllowMacs are silently<br />dropped, and subnets with an empty AllowMacs are also fully silent. |  | Optional: \{\} <br /> |
+
+
+#### StaticLease
+
+
+
+StaticLease pins a MAC address to a fixed IP within the subnet, bypassing dynamic allocation.
+
+
+
+_Appears in:_
+- [OOBSubnetSpec](#oobsubnetspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mac` _string_ | MAC is the hardware address of the client, e.g. "00:11:22:33:44:55". |  | Pattern: `^([0-9a-fA-F]\{2\}:)\{5\}[0-9a-fA-F]\{2\}$` <br />Required: \{\} <br /> |
+| `ip` _string_ | IP is the fixed IPv4 address to offer to this MAC. |  | Format: ipv4 <br />Required: \{\} <br /> |
+| `hostname` _string_ | Hostname is the optional hostname to include in the DHCP offer (option 12). |  |  |
 
 
