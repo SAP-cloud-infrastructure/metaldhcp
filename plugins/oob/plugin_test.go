@@ -920,6 +920,37 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(contains("10.52.0.0/24", out.YourIPAddr)).To(BeTrue())
 	})
 
+	It("serves DHCP request when OOBSubnet CR allowMacs uses colon-formatted MAC", func(ctx SpecContext) {
+		hpeMACParsed, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+
+		subnet := &metaldhcpv1alpha1.OOBSubnet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "subnet-colon-mac",
+				Labels: map[string]string{"oob": "true"},
+			},
+			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+				CIDR:      "10.58.0.0/24",
+				Gateway:   "10.58.0.1",
+				AllowMacs: []string{hpeMAC}, // colon-formatted, as moo and other tools write
+			},
+		}
+		Expect(crClient.Create(ctx, subnet)).To(Succeed())
+		DeferCleanup(crClient.Delete, subnet)
+
+		h := buildPlugin(api.OOBConfig{
+			SubnetLabels: []api.SubnetLabel{{Key: "oob", Value: "true"}},
+		})
+
+		deferDeleteLease(hpeMACParsed)
+		req, resp := discoverRelay(hpeMACParsed, net.ParseIP("10.58.0.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse(), "colon-formatted MAC in allowMacs must be served after normalization")
+		Expect(out).NotTo(BeNil())
+		Expect(contains("10.58.0.0/24", out.YourIPAddr)).To(BeTrue())
+	})
+
 	It("drops all requests when allowMacs is empty and allowAllMacs is false (deny-all default)", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{{

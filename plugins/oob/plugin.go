@@ -196,7 +196,10 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		} else {
 			// MAC filter: deny-all by default. AllowAllMacs=true bypasses the check (dev/debug only).
-			if !pool.AllowAllMacs && !slices.Contains(pool.AllowMacs, macKey) {
+			// allowMacs entries are normalized before matching so any MAC format works.
+			if !pool.AllowAllMacs && !slices.ContainsFunc(pool.AllowMacs, func(m string) bool {
+				return helper.NormalizeMACString(m) == macKey
+			}) {
 				log.Debugf("← DROP %s mac=%s: not in allowMacs for subnet %s (allowAllMacs=false)", req.MessageType(), mac, pool.CIDR)
 				return nil, true
 			}
