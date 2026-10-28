@@ -26,7 +26,7 @@ func TestReadHandler_ServesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := conn.LocalAddr().String()
-	conn.Close()
+	_ = conn.Close()
 
 	s := tftp.NewServer(readHandler(dir), nil)
 	go func() { _ = s.ListenAndServe(addr) }()
@@ -57,7 +57,7 @@ func TestReadHandler_MissingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := conn.LocalAddr().String()
-	conn.Close()
+	_ = conn.Close()
 
 	s := tftp.NewServer(readHandler(dir), nil)
 	go func() { _ = s.ListenAndServe(addr) }()
@@ -86,7 +86,7 @@ func TestReadHandler_PathTraversalBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := conn.LocalAddr().String()
-	conn.Close()
+	_ = conn.Close()
 
 	s := tftp.NewServer(readHandler(dir), nil)
 	go func() { _ = s.ListenAndServe(addr) }()

@@ -44,7 +44,7 @@ func envtestK8sVersion() string {
 		for _, dep := range info.Deps {
 			if dep.Path == "k8s.io/api" {
 				var minor int
-				fmt.Sscanf(dep.Version, "v0.%d.", &minor)
+				_, _ = fmt.Sscanf(dep.Version, "v0.%d.", &minor)
 				if minor > 0 {
 					return fmt.Sprintf("1.%d.0", minor)
 				}

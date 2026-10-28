@@ -97,3 +97,6 @@ data:
       - {{ . }}
       {{- end }}
     {{- end }}
+    {{- with .Values.oob.reclaimGrace }}
+    reclaimGrace: {{ . }}
+    {{- end }}

@@ -65,6 +65,11 @@ oob:
   ntpServers: []
   # - 132.163.96.1
 
+  # reclaimGrace is the grace period past a dynamic lease's expiry before its address may be
+  # reclaimed for another client. Empty uses the server default (1h).
+  reclaimGrace: ""
+  # reclaimGrace: 1h
+
 securityContext:
   capabilities:
     add:

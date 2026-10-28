@@ -68,10 +68,18 @@ type K8sClient struct {
 }
 
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
+	grace := api.DefaultReclaimGrace
+	if cfg.ReclaimGrace != "" {
+		if d, err := time.ParseDuration(cfg.ReclaimGrace); err == nil {
+			grace = d
+		} else {
+			log.Warningf("Ignoring invalid reclaimGrace %q: %v", cfg.ReclaimGrace, err)
+		}
+	}
 	k := &K8sClient{
 		Client:       kubernetes.GetClient(),
 		SubnetLabels: cfg.SubnetLabels,
-		alloc:        allocator.New(),
+		alloc:        allocator.New(grace),
 		statics:      make(map[string]staticEntry),
 		domain:       cfg.Domain,
 	}
@@ -236,26 +244,81 @@ func (k *K8sClient) lookupStaticLease(macKey string) (staticEntry, bool) {
 }
 
 // seedFromLeases rebuilds in-memory allocator state from the durable DHCPLease ledger so that
-// re-leases survive a server restart.
+// re-leases survive a server restart. It enforces one DHCPLease per IP: when two leases record
+// the same address it keeps the one with the later expiry and deletes the other.
 func (k *K8sClient) seedFromLeases(ctx context.Context) error {
 	leases := &metaldhcpv1alpha1.DHCPLeaseList{}
 	if err := k.Client.List(ctx, leases); err != nil {
 		return err
 	}
-	for _, l := range leases.Items {
+
+	// Resolve duplicate-IP conflicts before seeding: index by IP, keeping the later-expiring
+	// lease and marking the other for deletion so the allocator is never asked to double-map.
+	chosen := make(map[string]int, len(leases.Items)) // IP string -> index of kept lease
+	var losers []int
+	for i := range leases.Items {
+		ip := net.ParseIP(leases.Items[i].Spec.IP)
+		if ip == nil {
+			continue
+		}
+		key := ip.String()
+		j, ok := chosen[key]
+		if !ok {
+			chosen[key] = i
+			continue
+		}
+		if leaseDedupPriority(&leases.Items[i]).After(leaseDedupPriority(&leases.Items[j])) {
+			losers = append(losers, j)
+			chosen[key] = i
+		} else {
+			losers = append(losers, i)
+		}
+	}
+
+	seeded := 0
+	for _, i := range chosen {
+		l := &leases.Items[i]
 		mac, err := net.ParseMAC(l.Spec.MACAddress)
 		if err != nil {
 			log.Warningf("Skipping DHCPLease %s with invalid MAC %q: %v", l.Name, l.Spec.MACAddress, err)
 			continue
 		}
 		ip := net.ParseIP(l.Spec.IP)
-		if ip == nil {
-			log.Warningf("Skipping DHCPLease %s with invalid IP %q", l.Name, l.Spec.IP)
-			continue
+		var expires time.Time
+		if l.Spec.LeaseExpiresAt != nil {
+			expires = l.Spec.LeaseExpiresAt.Time
 		}
-		k.alloc.Restore(helper.NormalizeMAC(mac), ip)
+		if k.alloc.Restore(helper.NormalizeMAC(mac), ip, expires) {
+			seeded++
+		}
 	}
-	log.Infof("Seeded allocator from %d DHCPLeases", len(leases.Items))
+	for _, i := range losers {
+		l := &leases.Items[i]
+		log.Warningf("Deleting duplicate DHCPLease %s: IP %s is claimed by a lease with a later expiry", l.Name, l.Spec.IP)
+		if err := k.Client.Delete(ctx, l); err != nil && !apierrors.IsNotFound(err) {
+			log.Warningf("Failed to delete duplicate DHCPLease %s: %v", l.Name, err)
+		}
+	}
+	log.Infof("Seeded allocator from %d DHCPLeases (%d duplicate(s) removed)", seeded, len(losers))
+	return nil
+}
+
+// leaseDedupPriority ranks a lease for duplicate-IP resolution: a lease with no recorded
+// expiry is treated as live (far future) so it is kept over a dated, possibly stale one.
+func leaseDedupPriority(l *metaldhcpv1alpha1.DHCPLease) time.Time {
+	if l.Spec.LeaseExpiresAt != nil {
+		return l.Spec.LeaseExpiresAt.Time
+	}
+	return time.Unix(1<<62, 0)
+}
+
+// deleteLeaseByName removes the DHCPLease with the given object name (the normalized MAC),
+// treating an already-absent object as success.
+func (k *K8sClient) deleteLeaseByName(ctx context.Context, name string) error {
+	lease := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	if err := k.Client.Delete(ctx, lease); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
 	return nil
 }
 
@@ -269,9 +332,18 @@ func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.Hardware
 		return nil, "", "", 0, err
 	}
 
-	leaseIP, err := k.alloc.Allocate(*pool, helper.NormalizeMAC(mac), requested, exactIP)
+	leaseIP, evicted, err := k.alloc.Allocate(*pool, helper.NormalizeMAC(mac), requested, exactIP)
 	if err != nil {
 		return nil, "", "", 0, &allocationError{reason: "PoolExhausted", err: fmt.Errorf("allocation failed in pool %s: %w", pool.CIDR, err)}
+	}
+	if evicted != "" {
+		// An expired dynamic lease was reclaimed to free this address; drop its stale CR so
+		// the ledger keeps one DHCPLease per IP and a restart does not re-seed it.
+		if derr := k.deleteLeaseByName(ctx, evicted); derr != nil {
+			log.Warningf("Failed to delete reclaimed DHCPLease %s: %v", evicted, derr)
+		} else {
+			log.Infof("Reclaimed expired lease %s: freed %s for MAC %s", evicted, leaseIP, mac)
+		}
 	}
 	return leaseIP, pool.Gateway, pool.BootURL, pool.LeaseTime, nil
 }
@@ -330,6 +402,15 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 				dns = append(dns, ip)
 			}
 		}
+		allowMacs := make([]string, 0, len(s.Spec.AllowMacs))
+		for _, m := range s.Spec.AllowMacs {
+			mac, err := net.ParseMAC(m)
+			if err != nil {
+				log.Warningf("OOBSubnet %s: invalid MAC %q in allowMacs, skipping", s.Name, m)
+				continue
+			}
+			allowMacs = append(allowMacs, helper.NormalizeMAC(mac))
+		}
 		pools = append(pools, allocator.Pool{
 			CIDR:          s.Spec.CIDR,
 			Gateway:       s.Spec.Gateway,
@@ -339,7 +420,7 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			LeaseTime:     lt,
 			DNSServers:    dns,
 			Domain:        s.Spec.Domain,
-			AllowMacs:     s.Spec.AllowMacs,
+			AllowMacs:     allowMacs,
 			ResponseDelay: rd,
 			AllowAllMacs:  s.Spec.AllowAllMacs,
 		})

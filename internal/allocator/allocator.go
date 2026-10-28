@@ -4,7 +4,8 @@
 // Package allocator provides a concurrency-safe, in-memory IPv4 allocator backed by
 // the DHCPLease ledger. The oob plugin seeds it from existing DHCPLease objects on
 // startup (Restore) and reserves addresses on each request (Allocate); the onboarding
-// plugin durably persists each reservation as a DHCPLease.
+// plugin durably persists each reservation as a DHCPLease. Expired dynamic leases are
+// reclaimed lazily during allocation once their expiry plus a configured grace has passed.
 package allocator
 
 import (
@@ -14,27 +15,51 @@ import (
 	"time"
 )
 
-// Allocator tracks MAC-to-IP assignments and the set of in-use addresses across all
-// subnets. All exported methods are safe for concurrent use.
-type Allocator struct {
-	mu       sync.Mutex
-	byMAC    map[string]net.IP
-	inUse    map[string]struct{}
-	reserved map[string]struct{} // mac keys with static bindings set by Reserve
+// entry is a MAC's current assignment. expiresAt is the lease expiry for a dynamic entry;
+// the zero time means the entry never expires — static reservations, and dynamic entries
+// whose pool defines no lease time, are never reclaimed.
+type entry struct {
+	ip        net.IP
+	expiresAt time.Time
 }
 
-func New() *Allocator {
+// Allocator tracks MAC-to-IP assignments across all subnets. byIP is the reverse index and
+// enforces one MAC per IP. reserved holds static bindings, which are excluded from expiry
+// and reclamation. All exported methods are safe for concurrent use.
+type Allocator struct {
+	mu       sync.Mutex
+	byMAC    map[string]entry
+	byIP     map[string]string // IP string -> MAC key
+	reserved map[string]struct{}
+	grace    time.Duration
+	now      func() time.Time
+}
+
+// New returns an allocator that reclaims a dynamic lease only after its expiry plus grace
+// has elapsed.
+func New(grace time.Duration) *Allocator {
 	return &Allocator{
-		byMAC:    make(map[string]net.IP),
-		inUse:    make(map[string]struct{}),
+		byMAC:    make(map[string]entry),
+		byIP:     make(map[string]string),
 		reserved: make(map[string]struct{}),
+		grace:    grace,
+		now:      time.Now,
 	}
 }
 
-// Reserve permanently pins macKey to ip. The binding is written into the allocator
-// and the IP is marked in-use so dynamic allocation never hands it out. Subsequent
-// Restore calls for the same macKey are silently ignored so that the DHCPLease ledger
-// cannot overwrite a static config binding on restart.
+// set records macKey -> ip with the given expiry, maintaining the byIP reverse index and
+// dropping any previous index entry for this MAC. Caller holds a.mu.
+func (a *Allocator) set(macKey string, ip net.IP, expiresAt time.Time) {
+	if old, ok := a.byMAC[macKey]; ok {
+		delete(a.byIP, old.ip.String())
+	}
+	a.byMAC[macKey] = entry{ip: ip, expiresAt: expiresAt}
+	a.byIP[ip.String()] = macKey
+}
+
+// Reserve permanently pins macKey to ip. The binding has no expiry and is never reclaimed or
+// handed to another MAC. Subsequent Restore calls for the same macKey are ignored so the
+// DHCPLease ledger cannot overwrite a static config binding on restart.
 func (a *Allocator) Reserve(macKey string, ip net.IP) {
 	ip = normalize(ip)
 	if ip == nil {
@@ -42,26 +67,30 @@ func (a *Allocator) Reserve(macKey string, ip net.IP) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.byMAC[macKey] = ip
-	a.inUse[ip.String()] = struct{}{}
+	a.set(macKey, ip, time.Time{})
 	a.reserved[macKey] = struct{}{}
 }
 
-// Restore seeds the allocator with an existing MAC->IP assignment, e.g. from a
-// persisted DHCPLease. Safe to call repeatedly during startup. Skips MAC keys already
-// pinned by Reserve so that static config bindings take precedence over the ledger.
-func (a *Allocator) Restore(macKey string, ip net.IP) {
+// Restore seeds a MAC->IP assignment from a persisted DHCPLease together with its lease
+// expiry (zero time when the lease records none). Reserved MACs are skipped so static config
+// bindings take precedence. If the IP is already held by a different MAC, Restore refuses and
+// returns false rather than double-mapping the address; the caller resolves the duplicate in
+// the ledger. Returns true when the assignment was recorded.
+func (a *Allocator) Restore(macKey string, ip net.IP, expiresAt time.Time) bool {
 	ip = normalize(ip)
 	if ip == nil {
-		return
+		return false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, ok := a.reserved[macKey]; ok {
-		return
+		return false
 	}
-	a.byMAC[macKey] = ip
-	a.inUse[ip.String()] = struct{}{}
+	if holder, ok := a.byIP[ip.String()]; ok && holder != macKey {
+		return false
+	}
+	a.set(macKey, ip, expiresAt)
+	return true
 }
 
 // Pool describes the usable address space of an OOBSubnet.
@@ -79,53 +108,66 @@ type Pool struct {
 	AllowAllMacs  bool          // when true, AllowMacs filter is bypassed (dev/debug only)
 }
 
-// Allocate returns the IPv4 address for macKey within pool. It returns the MAC's
-// existing in-CIDR assignment if present (idempotent re-lease), honors requestedIP
-// when exact is set and the address is free (or already this MAC's), and otherwise
-// assigns the first free host address in the pool. It errors when the pool is
-// exhausted or misconfigured.
-func (a *Allocator) Allocate(pool Pool, macKey string, requestedIP net.IP, exact bool) (net.IP, error) {
+// Allocate returns the IPv4 address for macKey within pool, plus the MAC key of any expired
+// dynamic lease evicted to make room ("" when none). It returns the MAC's existing in-CIDR
+// assignment and refreshes its expiry (idempotent re-lease), honors requestedIP when exact is
+// set and the address is free, and otherwise assigns the first free host — reclaiming an
+// expired dynamic lease only when no never-used address remains. It errors when the pool is
+// exhausted (no free and no reclaimable address) or misconfigured.
+func (a *Allocator) Allocate(pool Pool, macKey string, requestedIP net.IP, exact bool) (net.IP, string, error) {
 	_, cidrNet, err := net.ParseCIDR(pool.CIDR)
 	if err != nil {
-		return nil, fmt.Errorf("invalid CIDR %q: %w", pool.CIDR, err)
+		return nil, "", fmt.Errorf("invalid CIDR %q: %w", pool.CIDR, err)
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if existing, ok := a.byMAC[macKey]; ok && cidrNet.Contains(existing) {
-		return existing, nil
+	now := a.now()
+	exp := a.expiryFor(pool, now)
+
+	if existing, ok := a.byMAC[macKey]; ok && cidrNet.Contains(existing.ip) {
+		if _, static := a.reserved[macKey]; !static {
+			a.byMAC[macKey] = entry{ip: existing.ip, expiresAt: exp} // refresh expiry on re-lease
+		}
+		return existing.ip, "", nil
 	}
 
 	if exact {
 		if req := normalize(requestedIP); req != nil && cidrNet.Contains(req) {
-			if _, used := a.inUse[req.String()]; !used {
-				a.assign(macKey, req)
-				return req, nil
+			if _, used := a.byIP[req.String()]; !used {
+				a.set(macKey, req, exp)
+				return req, "", nil
 			}
 		}
 	}
 
-	ip, err := a.firstFree(cidrNet, pool)
+	ip, evicted, err := a.firstFree(cidrNet, pool, now)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	a.assign(macKey, ip)
-	return ip, nil
+	a.set(macKey, ip, exp)
+	return ip, evicted, nil
 }
 
-func (a *Allocator) assign(macKey string, ip net.IP) {
-	a.byMAC[macKey] = ip
-	a.inUse[ip.String()] = struct{}{}
+// expiryFor returns the expiry to stamp on a dynamic assignment from pool, or the zero time
+// when the pool defines no lease time (such entries never expire and are never reclaimed).
+func (a *Allocator) expiryFor(pool Pool, now time.Time) time.Time {
+	if pool.LeaseTime <= 0 {
+		return time.Time{}
+	}
+	return now.Add(pool.LeaseTime)
 }
 
 // firstFree scans the usable host range of cidrNet (narrowed by the optional
-// RangeStart/RangeEnd) and returns the first address not already in use, excluding
-// the network, broadcast and gateway addresses. The caller must hold a.mu.
-func (a *Allocator) firstFree(cidrNet *net.IPNet, pool Pool) (net.IP, error) {
+// RangeStart/RangeEnd), excluding the network, broadcast and gateway addresses. It returns
+// the first never-used address if any; otherwise it reclaims the stalest dynamic lease whose
+// expiry plus grace has passed, evicting it and returning its MAC key so the caller can delete
+// the stale record. The caller holds a.mu.
+func (a *Allocator) firstFree(cidrNet *net.IPNet, pool Pool, now time.Time) (net.IP, string, error) {
 	network := cidrNet.IP.Mask(cidrNet.Mask).To4()
 	if network == nil {
-		return nil, fmt.Errorf("CIDR %q is not IPv4", pool.CIDR)
+		return nil, "", fmt.Errorf("CIDR %q is not IPv4", pool.CIDR)
 	}
 	broadcast := broadcastAddr(cidrNet)
 	gateway := normalize(net.ParseIP(pool.Gateway))
@@ -139,17 +181,37 @@ func (a *Allocator) firstFree(cidrNet *net.IPNet, pool Pool) (net.IP, error) {
 		hi = end
 	}
 
+	var reclaimIP net.IP
+	var reclaimMAC string
+	var reclaimExp time.Time
+
 	for ip := cloneIP(lo); compareIP(ip, hi) <= 0; ip = nextIP(ip) {
-		s := ip.String()
 		if gateway != nil && ip.Equal(gateway) {
 			continue
 		}
-		if _, used := a.inUse[s]; used {
+		s := ip.String()
+		holder, used := a.byIP[s]
+		if !used {
+			return cloneIP(ip), "", nil // prefer a never-used address
+		}
+		if _, static := a.reserved[holder]; static {
 			continue
 		}
-		return cloneIP(ip), nil
+		e := a.byMAC[holder]
+		if e.expiresAt.IsZero() || !now.After(e.expiresAt.Add(a.grace)) {
+			continue // live or non-expiring: not reclaimable
+		}
+		if reclaimMAC == "" || e.expiresAt.Before(reclaimExp) {
+			reclaimIP, reclaimMAC, reclaimExp = cloneIP(ip), holder, e.expiresAt // stalest wins
+		}
 	}
-	return nil, fmt.Errorf("no free address in pool %s", pool.CIDR)
+
+	if reclaimMAC != "" {
+		delete(a.byMAC, reclaimMAC)
+		delete(a.byIP, reclaimIP.String())
+		return reclaimIP, reclaimMAC, nil
+	}
+	return nil, "", fmt.Errorf("no free address in pool %s", pool.CIDR)
 }
 
 func broadcastAddr(cidrNet *net.IPNet) net.IP {

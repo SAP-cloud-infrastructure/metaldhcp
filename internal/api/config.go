@@ -3,6 +3,12 @@
 
 package api
 
+import "time"
+
+// DefaultReclaimGrace is the grace period past a dynamic lease's expiry before its address
+// may be reclaimed for another client, used when OOBConfig.ReclaimGrace is unset.
+const DefaultReclaimGrace = time.Hour
+
 type SubnetLabel struct {
 	Key   string `yaml:"key"`
 	Value string `yaml:"value"`
@@ -49,4 +55,9 @@ type OOBConfig struct {
 
 	// NTPServers is the list of NTP server IPs or hostnames sent in option 42.
 	NTPServers []string `yaml:"ntpServers,omitempty"`
+
+	// ReclaimGrace is the grace period past a dynamic lease's expiry before its address may
+	// be reclaimed for another client, parsed with time.ParseDuration. Empty uses
+	// DefaultReclaimGrace.
+	ReclaimGrace string `yaml:"reclaimGrace,omitempty"`
 }
