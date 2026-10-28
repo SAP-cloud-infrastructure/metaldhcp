@@ -34,9 +34,9 @@ type Subnet struct {
 	StaticLeases  []StaticLease `yaml:"staticLeases,omitempty"`
 	DNSServers    []string      `yaml:"dnsServers,omitempty"`
 	Domain        string        `yaml:"domain,omitempty"`
-	AllowMacs     []string      `yaml:"allowMacs,omitempty"`
+	Mode          string        `yaml:"mode,omitempty"`
+	MacList       []string      `yaml:"macList,omitempty"`
 	ResponseDelay string        `yaml:"responseDelay,omitempty"` // parsed with time.ParseDuration at bootstrap
-	AllowAllMacs  bool          `yaml:"allowAllMacs,omitempty"`
 }
 
 type OOBConfig struct {

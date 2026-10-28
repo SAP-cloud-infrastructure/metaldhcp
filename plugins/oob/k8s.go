@@ -207,9 +207,9 @@ func (k *K8sClient) applyConfigToCR(s api.Subnet, cr *metaldhcpv1alpha1.OOBSubne
 		StaticLeases:  staticLeases,
 		DNSServers:    s.DNSServers,
 		Domain:        s.Domain,
-		AllowMacs:     s.AllowMacs,
+		Mode:          s.Mode,
+		MacList:       s.MacList,
 		ResponseDelay: rd,
-		AllowAllMacs:  s.AllowAllMacs,
 	}
 }
 
@@ -402,15 +402,6 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 				dns = append(dns, ip)
 			}
 		}
-		allowMacs := make([]string, 0, len(s.Spec.AllowMacs))
-		for _, m := range s.Spec.AllowMacs {
-			mac, err := net.ParseMAC(m)
-			if err != nil {
-				log.Warningf("OOBSubnet %s: invalid MAC %q in allowMacs, skipping", s.Name, m)
-				continue
-			}
-			allowMacs = append(allowMacs, helper.NormalizeMAC(mac))
-		}
 		pools = append(pools, allocator.Pool{
 			CIDR:          s.Spec.CIDR,
 			Gateway:       s.Spec.Gateway,
@@ -420,9 +411,9 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			LeaseTime:     lt,
 			DNSServers:    dns,
 			Domain:        s.Spec.Domain,
-			AllowMacs:     allowMacs,
+			Mode:          s.Spec.Mode,
+			MacList:       s.Spec.MacList,
 			ResponseDelay: rd,
-			AllowAllMacs:  s.Spec.AllowAllMacs,
 		})
 		if len(s.Spec.StaticLeases) > 0 {
 			leases := make([]api.StaticLease, len(s.Spec.StaticLeases))

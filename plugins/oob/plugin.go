@@ -195,13 +195,19 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		} else {
-			// MAC filter: deny-all by default. AllowAllMacs=true bypasses the check (dev/debug only).
-			// allowMacs entries are normalized before matching so any MAC format works.
-			if !pool.AllowAllMacs && !slices.ContainsFunc(pool.AllowMacs, func(m string) bool {
-				return helper.NormalizeMACString(m) == macKey
-			}) {
-				log.Debugf("← DROP %s mac=%s: not in allowMacs for subnet %s (allowAllMacs=false)", req.MessageType(), mac, pool.CIDR)
-				return nil, true
+			// MAC filter by mode. macList entries are normalized before matching so any
+			// MAC format works. Empty/unknown mode is treated as allowAll.
+			switch pool.Mode {
+			case "allow":
+				if !slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey }) {
+					log.Debugf("← DROP %s mac=%s: not in macList for subnet %s (allow)", req.MessageType(), mac, pool.CIDR)
+					return nil, true
+				}
+			case "deny":
+				if slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey }) {
+					log.Debugf("← DROP %s mac=%s: in macList for subnet %s (deny)", req.MessageType(), mac, pool.CIDR)
+					return nil, true
+				}
 			}
 
 			responseDelay = pool.ResponseDelay

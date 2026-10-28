@@ -112,7 +112,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		const cidr = "192.168.42.0/24"
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "192.168.42.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "192.168.42.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -142,7 +142,7 @@ var _ = Describe("OOB plugin handler4", func() {
 				Name:   "subnet-a",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "192.168.43.1", AllowAllMacs: true},
+			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "192.168.43.1"},
 		}
 		Expect(crClient.Create(ctx, subnet)).To(Succeed())
 		DeferCleanup(crClient.Delete, subnet)
@@ -190,7 +190,7 @@ var _ = Describe("OOB plugin handler4", func() {
 				Name:   "subnet-hot-add",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "172.16.10.1", AllowAllMacs: true},
+			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "172.16.10.1"},
 		}
 		Expect(crClient.Create(ctx, subnet)).To(Succeed())
 		DeferCleanup(crClient.Delete, subnet)
@@ -261,9 +261,8 @@ var _ = Describe("OOB plugin handler4", func() {
 				Labels: map[string]string{"oob": "true"},
 			},
 			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
-				CIDR:         cidr,
-				Gateway:      "172.16.12.1",
-				AllowAllMacs: true,
+				CIDR:    cidr,
+				Gateway: "172.16.12.1",
 				StaticLeases: []metaldhcpv1alpha1.StaticLease{
 					{MAC: dellMAC, IP: staticIP},
 				},
@@ -292,7 +291,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		const cidr = "192.168.44.0/24"
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "192.168.44.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "192.168.44.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -326,8 +325,8 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{
-				{CIDR: cidr1, Gateway: "10.0.1.1", AllowAllMacs: true},
-				{CIDR: cidr2, Gateway: "10.0.2.1", AllowAllMacs: true},
+				{CIDR: cidr1, Gateway: "10.0.1.1"},
+				{CIDR: cidr2, Gateway: "10.0.2.1"},
 			},
 		})
 
@@ -373,7 +372,7 @@ var _ = Describe("OOB plugin handler4", func() {
 	It("drops the request when the matching pool is exhausted", func(ctx SpecContext) {
 		// A /31 has no usable host addresses, so allocation always fails.
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: "10.0.0.0/31", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: "10.0.0.0/31"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -398,12 +397,11 @@ var _ = Describe("OOB plugin handler4", func() {
 		h := buildPlugin(api.OOBConfig{
 			ReclaimGrace: "1s",
 			Subnets: []api.Subnet{{
-				CIDR:         cidr,
-				Gateway:      "10.44.99.1",
-				RangeStart:   onlyIP,
-				RangeEnd:     onlyIP,
-				LeaseTime:    "1s",
-				AllowAllMacs: true,
+				CIDR:       cidr,
+				Gateway:    "10.44.99.1",
+				RangeStart: onlyIP,
+				RangeEnd:   onlyIP,
+				LeaseTime:  "1s",
 			}},
 		})
 
@@ -466,7 +464,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// buildPlugin seeds from the ledger and must resolve the duplicate on startup.
 		buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: "10.44.98.0/24", Gateway: "10.44.98.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: "10.44.98.0/24", Gateway: "10.44.98.1"}},
 		})
 
 		// The expired duplicate is deleted; the live lease is kept.
@@ -484,7 +482,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		)
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL, AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.1.1.1", BootURL: bootURL}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -500,7 +498,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 	It("leaves BootFileName empty when pool has no bootURL", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: "10.2.2.0/24", Gateway: "10.2.2.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -522,7 +520,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		)
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1", AllowAllMacs: true, StaticLeases: []api.StaticLease{
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.3.3.1", StaticLeases: []api.StaticLease{
 				{MAC: dellMAC, IP: staticIP, Hostname: staticHN},
 			}}},
 		})
@@ -600,7 +598,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		DeferCleanup(func() { vendorLookup = false })
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.10.10.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.10.10.1"}},
 		})
 
 		for _, tc := range []struct {
@@ -635,7 +633,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// vendorLookup defaults false; confirm no annotation written
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.10.11.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.10.11.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -662,7 +660,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		)
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.20.0.1", BootURL: bootURL, AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.20.0.1", BootURL: bootURL}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -680,7 +678,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 	It("stops chain for iPXE phase 2 even when bootURL is empty", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: "10.22.0.0/24", Gateway: "10.22.0.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: "10.22.0.0/24", Gateway: "10.22.0.1"}},
 		})
 
 		mac, err := net.ParseMAC(dellMAC)
@@ -699,7 +697,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		const serverVIP = "10.44.8.78"
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: "10.5.5.0/24", Gateway: "10.5.5.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: "10.5.5.0/24", Gateway: "10.5.5.1"}},
 		})
 
 		mac, err := net.ParseMAC(hpeMAC)
@@ -719,7 +717,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		const serverVIP = "10.44.8.78"
 
 		h := buildPlugin(api.OOBConfig{
-			Subnets: []api.Subnet{{CIDR: "10.5.6.0/24", Gateway: "10.5.6.1", AllowAllMacs: true}},
+			Subnets: []api.Subnet{{CIDR: "10.5.6.0/24", Gateway: "10.5.6.1"}},
 		})
 
 		mac, err := net.ParseMAC(hpeMAC)
@@ -735,7 +733,7 @@ var _ = Describe("OOB plugin handler4", func() {
 	})
 	It("sets DNS, domain, and NTP options in the OFFER", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
-			Subnets:    []api.Subnet{{CIDR: "10.30.0.0/24", Gateway: "10.30.0.1", AllowAllMacs: true}},
+			Subnets:    []api.Subnet{{CIDR: "10.30.0.0/24", Gateway: "10.30.0.1"}},
 			DNSServers: []string{"8.8.8.8", "8.8.4.4"},
 			Domain:     "example.com",
 			NTPServers: []string{"132.163.96.1"},
@@ -770,16 +768,14 @@ var _ = Describe("OOB plugin handler4", func() {
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{
 				{
-					CIDR:         cidrOverride,
-					Gateway:      "10.31.0.1",
-					DNSServers:   []string{"1.1.1.1", "1.0.0.1"},
-					Domain:       "override.example.com",
-					AllowAllMacs: true,
+					CIDR:       cidrOverride,
+					Gateway:    "10.31.0.1",
+					DNSServers: []string{"1.1.1.1", "1.0.0.1"},
+					Domain:     "override.example.com",
 				},
 				{
-					CIDR:         cidrFallback,
-					Gateway:      "10.32.0.1",
-					AllowAllMacs: true,
+					CIDR:    cidrFallback,
+					Gateway: "10.32.0.1",
 				},
 			},
 			DNSServers: []string{"8.8.8.8", "8.8.4.4"},
@@ -882,7 +878,8 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets: []api.Subnet{{
 				CIDR:    "10.51.0.0/24",
 				Gateway: "10.51.0.1",
-				AllowMacs: []string{helper.NormalizeMAC(func() net.HardwareAddr {
+				Mode:    "allow",
+				MacList: []string{helper.NormalizeMAC(func() net.HardwareAddr {
 					mac, _ := net.ParseMAC(hpeMAC)
 					return mac
 				}())},
@@ -905,9 +902,10 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{{
-				CIDR:      "10.52.0.0/24",
-				Gateway:   "10.52.0.1",
-				AllowMacs: []string{helper.NormalizeMAC(hpeMACParsed)},
+				CIDR:    "10.52.0.0/24",
+				Gateway: "10.52.0.1",
+				Mode:    "allow",
+				MacList: []string{helper.NormalizeMAC(hpeMACParsed)},
 			}},
 		})
 
@@ -930,9 +928,10 @@ var _ = Describe("OOB plugin handler4", func() {
 				Labels: map[string]string{"oob": "true"},
 			},
 			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
-				CIDR:      "10.58.0.0/24",
-				Gateway:   "10.58.0.1",
-				AllowMacs: []string{hpeMAC}, // colon-formatted, as moo and other tools write
+				CIDR:    "10.58.0.0/24",
+				Gateway: "10.58.0.1",
+				Mode:    "allow",
+				MacList: []string{hpeMAC}, // colon-formatted, as moo and other tools write
 			},
 		}
 		Expect(crClient.Create(ctx, subnet)).To(Succeed())
@@ -951,12 +950,12 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(contains("10.58.0.0/24", out.YourIPAddr)).To(BeTrue())
 	})
 
-	It("drops all requests when allowMacs is empty and allowAllMacs is false (deny-all default)", func(ctx SpecContext) {
+	It("drops all requests when mode is allow with an empty macList (serve nobody)", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{{
 				CIDR:    "10.54.0.0/24",
 				Gateway: "10.54.0.1",
-				// no AllowMacs, no AllowAllMacs — deny-all by default
+				Mode:    "allow", // empty macList => serve nobody
 			}},
 		})
 
@@ -966,17 +965,17 @@ var _ = Describe("OOB plugin handler4", func() {
 			req, resp := discoverRelay(mac, net.ParseIP("10.54.0.1"))
 
 			out, drop := h(req, resp)
-			Expect(out).To(BeNil(), "no offer must be sent when allowAllMacs=false and allowMacs is empty (mac=%s)", rawMAC)
+			Expect(out).To(BeNil(), "no offer must be sent with an empty allow (mac=%s)", rawMAC)
 			Expect(drop).To(BeTrue(), "request must be dropped (mac=%s)", rawMAC)
 		}
 	})
 
-	It("serves any MAC when allowAllMacs is true regardless of allowMacs", func(ctx SpecContext) {
+	It("serves any MAC in allowAll mode", func(ctx SpecContext) {
 		h := buildPlugin(api.OOBConfig{
 			Subnets: []api.Subnet{{
-				CIDR:         "10.55.0.0/24",
-				Gateway:      "10.55.0.1",
-				AllowAllMacs: true,
+				CIDR:    "10.55.0.0/24",
+				Gateway: "10.55.0.1",
+				Mode:    "allowAll",
 			}},
 		})
 
@@ -987,9 +986,37 @@ var _ = Describe("OOB plugin handler4", func() {
 			req, resp := discoverRelay(mac, net.ParseIP("10.55.0.1"))
 
 			out, drop := h(req, resp)
-			Expect(drop).To(BeFalse(), "any MAC must receive an offer when allowAllMacs=true (mac=%s)", rawMAC)
+			Expect(drop).To(BeFalse(), "any MAC must receive an offer in allowAll mode (mac=%s)", rawMAC)
 			Expect(out).NotTo(BeNil())
 		}
+	})
+
+	It("serves every MAC except those in macList when mode is deny", func(ctx SpecContext) {
+		hpeMACParsed, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{
+				CIDR:    "10.59.0.0/24",
+				Gateway: "10.59.0.1",
+				Mode:    "deny",
+				MacList: []string{helper.NormalizeMAC(hpeMACParsed)},
+			}},
+		})
+
+		// Listed MAC is denied.
+		reqDeny, respDeny := discoverRelay(hpeMACParsed, net.ParseIP("10.59.0.1"))
+		outDeny, dropDeny := h(reqDeny, respDeny)
+		Expect(outDeny).To(BeNil(), "listed MAC must be denied in deny mode")
+		Expect(dropDeny).To(BeTrue())
+
+		// Any other MAC is served.
+		dellMACParsed, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(dellMACParsed)
+		reqAllow, respAllow := discoverRelay(dellMACParsed, net.ParseIP("10.59.0.1"))
+		outAllow, dropAllow := h(reqAllow, respAllow)
+		Expect(dropAllow).To(BeFalse(), "unlisted MAC must be served in deny mode")
+		Expect(outAllow).NotTo(BeNil())
 	})
 
 	It("serves a static lease MAC even when not in allowMacs", func(ctx SpecContext) {
@@ -1001,8 +1028,9 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets: []api.Subnet{{
 				CIDR:    "10.56.0.0/24",
 				Gateway: "10.56.0.1",
-				// only HPE is in allowMacs; Lenovo is not — but has a static lease
-				AllowMacs: []string{helper.NormalizeMAC(func() net.HardwareAddr {
+				// only HPE is in macList; Lenovo is not — but has a static lease
+				Mode: "allow",
+				MacList: []string{helper.NormalizeMAC(func() net.HardwareAddr {
 					mac, _ := net.ParseMAC(hpeMAC)
 					return mac
 				}())},
@@ -1022,7 +1050,9 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets: []api.Subnet{{
 				CIDR:    "10.57.0.0/24",
 				Gateway: "10.57.0.1",
-				// Dell is not listed and has no static lease
+				// allow with an empty macList => serve nobody; Dell is not listed and
+				// has no static lease, so it is dropped while the static-lease MAC bypasses.
+				Mode:         "allow",
 				StaticLeases: []api.StaticLease{{MAC: lenovoMAC, IP: "10.57.0.200"}},
 			}},
 		})
@@ -1044,7 +1074,6 @@ var _ = Describe("OOB plugin handler4", func() {
 				CIDR:          "10.53.0.0/24",
 				Gateway:       "10.53.0.1",
 				ResponseDelay: delay.String(),
-				AllowAllMacs:  true,
 			}},
 		})
 

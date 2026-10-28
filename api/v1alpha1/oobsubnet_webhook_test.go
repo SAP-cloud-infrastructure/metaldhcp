@@ -95,6 +95,33 @@ func TestValidateDelete_AlwaysAllowed(t *testing.T) {
 	}
 }
 
+func TestValidateCreate_MacListWithAllowAllRejected(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24")
+	s.Spec.Mode = "allowAll"
+	s.Spec.MacList = []string{"00:11:22:33:44:55"}
+	_, err := s.ValidateCreate()
+	if err == nil {
+		t.Fatal("expected error for macList set with allowAll, got nil")
+	}
+}
+
+func TestValidateCreate_MacListWithAllowAccepted(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24")
+	s.Spec.Mode = "allow"
+	s.Spec.MacList = []string{"00:11:22:33:44:55"}
+	if _, err := s.ValidateCreate(); err != nil {
+		t.Fatalf("expected no error for macList with allow, got: %v", err)
+	}
+}
+
+func TestValidateCreate_EmptyMacListWithAllowAllAccepted(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24")
+	s.Spec.Mode = "allowAll"
+	if _, err := s.ValidateCreate(); err != nil {
+		t.Fatalf("expected no error for allowAll with empty macList, got: %v", err)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsSubstring(s, sub))
 }

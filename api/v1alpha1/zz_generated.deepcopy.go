@@ -170,8 +170,8 @@ func (in *OOBSubnetSpec) DeepCopyInto(out *OOBSubnetSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.AllowMacs != nil {
-		in, out := &in.AllowMacs, &out.AllowMacs
+	if in.MacList != nil {
+		in, out := &in.MacList, &out.MacList
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
