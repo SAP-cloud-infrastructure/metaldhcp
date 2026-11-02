@@ -266,8 +266,10 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if hostname != "" {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
-	if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
-		log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+	if req.MessageType() == dhcpv4.MessageTypeRequest {
+		if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
+			log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+		}
 	}
 
 	if responseDelay > 0 {
