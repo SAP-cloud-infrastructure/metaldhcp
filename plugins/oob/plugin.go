@@ -294,10 +294,10 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		return resp, true // stop chain; nbp must not run for iPXE phase
 	}
 
-	// Phase 1 (PXEClient) or plain DHCP: nbp handles TFTP options downstream.
-	if bootURL != "" {
-		resp.BootFileName = bootURL
-	}
+	// Phase 1 (PXEClient) or plain DHCP: nbp handles TFTP options (66/67) downstream.
+	// Do NOT set resp.BootFileName here — nbp only sets option 67, not the BOOTP file
+	// field, so setting it to an HTTP URL would cause PXE ROMs that prefer the BOOTP
+	// file field over option 67 to see a non-TFTP path and reject the OFFER.
 	log.Infof("← OFFER %s mac=%s yiaddr=%s bootURL=%q", req.MessageType(), mac, leaseIP, bootURL)
 	return resp, false
 }

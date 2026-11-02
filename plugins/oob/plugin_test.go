@@ -527,7 +527,11 @@ var _ = Describe("OOB plugin handler4", func() {
 		Eventually(Object(live)).Should(HaveField("Spec.IP", dupIP))
 	})
 
-	It("sets BootFileName from pool bootURL when present", func(ctx SpecContext) {
+	It("leaves BootFileName empty for phase 1 PXE even when pool has bootURL", func(ctx SpecContext) {
+		// The HTTP bootURL must not appear in the BOOTP file field for phase 1:
+		// nbp sets option 67 (TFTP path) after oob, but does not overwrite the BOOTP
+		// file field. A PXE ROM that prefers the file field over option 67 would reject
+		// an OFFER with an HTTP URL there.
 		const (
 			cidr    = "10.1.1.0/24"
 			bootURL = "https://boot-operator.example.com/boot"
@@ -545,7 +549,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		out, drop := h(req, resp)
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
-		Expect(out.BootFileName).To(Equal(bootURL))
+		Expect(out.BootFileName).To(BeEmpty())
 	})
 
 	It("leaves BootFileName empty when pool has no bootURL", func(ctx SpecContext) {
