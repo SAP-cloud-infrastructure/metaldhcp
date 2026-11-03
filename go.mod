@@ -103,11 +103,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-// Temporary: coredhcp/server/sendEthernet.go is Linux-only with no stub for other
-// platforms, causing a compile error on macOS. damyan/coredhcp@09c61d00 adds
-// sendEthernet_darwin.go returning "not implemented" — enough to compile; actual
-// DHCP serving still requires Linux. Remove once a fix is merged upstream.
-replace github.com/coredhcp/coredhcp => github.com/damyan/coredhcp v0.0.0-20260806121706-09c61d00f7f3
-
-// Paired replace required by the damyan/coredhcp fork (it pins damyan/dhcp).
-replace github.com/insomniacslk/dhcp => github.com/damyan/dhcp v0.0.0-20251021085928-2a9256c7a006
+// macOS stub: coredhcp/server/sendEthernet.go is Linux-only. xkonni/coredhcp
+// adds sendEthernet_darwin.go and source_address config support.
+replace github.com/coredhcp/coredhcp => github.com/xkonni/coredhcp v0.0.0-20261103140401-4214633f5c19
