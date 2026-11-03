@@ -62,6 +62,7 @@ type K8sClient struct {
 	SubnetLabels []api.SubnetLabel
 	alloc        *allocator.Allocator
 	statics      map[string]staticEntry // normalized MAC key -> static binding
+	serverIP     net.IP
 	dnsServers   []net.IP
 	domain       string
 	ntpServers   []net.IP
@@ -82,6 +83,13 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 		alloc:        allocator.New(grace),
 		statics:      make(map[string]staticEntry),
 		domain:       cfg.Domain,
+	}
+	if cfg.ServerIP != "" {
+		if ip := net.ParseIP(cfg.ServerIP); ip != nil {
+			k.serverIP = ip.To4()
+		} else {
+			log.Warningf("Ignoring invalid serverIP %q", cfg.ServerIP)
+		}
 	}
 	for _, s := range cfg.DNSServers {
 		if ip := net.ParseIP(s); ip != nil {

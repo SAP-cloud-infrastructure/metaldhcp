@@ -174,11 +174,16 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	var subnetDNS []net.IP
 	var subnetDomain string
 	var responseDelay time.Duration
+	var subnetMask net.IPMask
 
 	if entry, ok := k.lookupStaticLease(macKey); ok {
 		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 		subnetDNS, subnetDomain = entry.dnsServers, entry.domain
+		// Config-file statics skip selectPool; call it here just for the CIDR/netmask.
+		if p, err := k.selectPool(ctx, poolHint); err == nil {
+			subnetMask = cidrMask(p.CIDR)
+		}
 	} else {
 		// Select pool once: used for the MAC filter and later for DNS/domain/responseDelay.
 		pool, poolErr := k.selectPool(ctx, poolHint)
@@ -187,6 +192,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 			k.emitEvent(mac, giaddr, vendor, poolErr)
 			return nil, true
 		}
+		subnetMask = cidrMask(pool.CIDR)
 
 		// selectPool/oobSubnetPools may have seeded CR-based static leases; re-check before
 		// the MAC filter so statically configured MACs always bypass the allowlist.
@@ -242,6 +248,12 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	}
 
 	resp.YourIPAddr = leaseIP
+	if subnetMask != nil {
+		resp.Options.Update(dhcpv4.OptSubnetMask(subnetMask))
+	}
+	if k.serverIP != nil {
+		resp.Options.Update(dhcpv4.OptServerIdentifier(k.serverIP))
+	}
 	if gw := net.ParseIP(gateway); gw != nil {
 		resp.Options.Update(dhcpv4.OptRouter(gw))
 	}
@@ -315,4 +327,13 @@ func clientIdentifier(req *dhcpv4.DHCPv4) string {
 // requestHostname returns the hostname from option 12 in the request, or "" when absent.
 func requestHostname(req *dhcpv4.DHCPv4) string {
 	return req.HostName()
+}
+
+// cidrMask parses cidr and returns its subnet mask, or nil on error.
+func cidrMask(cidr string) net.IPMask {
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil
+	}
+	return ipNet.Mask
 }

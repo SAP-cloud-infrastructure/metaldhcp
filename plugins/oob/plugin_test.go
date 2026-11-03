@@ -568,6 +568,42 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out.BootFileName).To(BeEmpty())
 	})
 
+	It("sets subnet mask option from pool CIDR", func(ctx SpecContext) {
+		h := buildPlugin(api.OOBConfig{
+			Subnets: []api.Subnet{{CIDR: "10.5.0.0/24", Gateway: "10.5.0.1"}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+		req, resp := discoverRelay(mac, net.ParseIP("10.5.0.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		mask := dhcpv4.GetIP(dhcpv4.OptionSubnetMask, out.Options)
+		Expect(mask.String()).To(Equal("255.255.255.0"))
+	})
+
+	It("sets server identifier option from configured serverIP", func(ctx SpecContext) {
+		const serverIP = "10.44.8.79"
+		h := buildPlugin(api.OOBConfig{
+			ServerIP: serverIP,
+			Subnets:  []api.Subnet{{CIDR: "10.5.0.0/24", Gateway: "10.5.0.1"}},
+		})
+
+		mac, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(mac)
+		req, resp := discoverRelay(mac, net.ParseIP("10.5.0.1"))
+
+		out, drop := h(req, resp)
+		Expect(drop).To(BeFalse())
+		Expect(out).NotTo(BeNil())
+		sid := dhcpv4.GetIP(dhcpv4.OptionServerIdentifier, out.Options)
+		Expect(sid.String()).To(Equal(serverIP))
+	})
+
 	It("returns the static IP for a configured MAC regardless of pool hint", func(ctx SpecContext) {
 		const (
 			cidr     = "10.3.3.0/24"

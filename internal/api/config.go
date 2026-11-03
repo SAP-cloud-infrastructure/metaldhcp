@@ -40,6 +40,10 @@ type Subnet struct {
 }
 
 type OOBConfig struct {
+	// ServerIP is the IP address sent as the DHCP server identifier (option 54). It must be
+	// reachable by clients and relay agents. When empty, option 54 is not set.
+	ServerIP string `yaml:"serverIP,omitempty"`
+
 	// SubnetLabels selects which OOBSubnet CRs count as pools. Ignored when Subnets is set.
 	SubnetLabels []SubnetLabel `yaml:"subnetLabels"`
 
