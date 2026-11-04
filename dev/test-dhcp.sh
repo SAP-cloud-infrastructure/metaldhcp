@@ -99,6 +99,80 @@ if 'lease_time' in dhcp_opts:
 PYEOF
 }
 
+# dhcp_request_relay <mac> <giaddr>
+# Full DISCOVER → OFFER → REQUEST → ACK relay exchange.
+# Prints ACK fields as KEY=VALUE (same format as dhcp_relay).
+dhcp_request_relay() {
+  local mac="$1" giaddr="$2"
+  exec_debug python3 - "$mac" "$giaddr" <<'PYEOF'
+import sys, threading, time
+from scapy.all import *
+
+mac_str, giaddr = sys.argv[1], sys.argv[2]
+
+def send_recv(opts):
+    """Send one relay DHCP packet, wait for server response on veth0-server."""
+    pkts = []
+    started = threading.Event()
+    done = threading.Event()
+
+    def capture():
+        started.set()
+        p = sniff(iface='veth0-server',
+                  filter='udp and src port 67 and dst port 67',
+                  count=1, timeout=4)
+        pkts.extend(p)
+        done.set()
+
+    t = threading.Thread(target=capture, daemon=True)
+    t.start()
+    started.wait()
+    time.sleep(0.05)
+
+    pkt = (Ether(src=mac_str, dst='ff:ff:ff:ff:ff:ff') /
+           IP(src='0.0.0.0', dst='255.255.255.255') /
+           UDP(sport=68, dport=67) /
+           BOOTP(chaddr=mac2str(mac_str), giaddr=giaddr) /
+           DHCP(options=opts))
+    sendp(pkt, iface='veth0', verbose=False)
+    done.wait(timeout=5)
+    return pkts[0] if pkts else None
+
+# Step 1: DISCOVER → OFFER
+offer = send_recv([('message-type', 'discover'), 'end'])
+if not offer or BOOTP not in offer:
+    sys.exit(0)
+
+offered_ip = offer[BOOTP].yiaddr
+offer_opts = {}
+for opt in offer[DHCP].options:
+    if isinstance(opt, (list, tuple)) and len(opt) >= 2:
+        offer_opts[opt[0]] = opt[1]
+server_id = offer_opts.get('server_id', '0.0.0.0')
+
+# Step 2: REQUEST → ACK
+ack = send_recv([('message-type', 'request'),
+                 ('server_id', server_id),
+                 ('requested_addr', offered_ip),
+                 'end'])
+if not ack or BOOTP not in ack:
+    sys.exit(0)
+
+bp = ack[BOOTP]
+print(f"YIADDR={bp.yiaddr}")
+ack_opts = {}
+for opt in ack[DHCP].options:
+    if isinstance(opt, (list, tuple)) and len(opt) >= 2 and isinstance(opt[0], str) and opt[0] != 'end':
+        ack_opts[opt[0]] = list(opt[1:]) if len(opt) > 2 else opt[1]
+if 'router' in ack_opts:
+    print(f"ROUTER={ack_opts['router']}")
+if 'server_id' in ack_opts:
+    print(f"SERVER_ID={ack_opts['server_id']}")
+if 'lease_time' in ack_opts:
+    print(f"LEASE_TIME={ack_opts['lease_time']}")
+PYEOF
+}
+
 # parse_offer: read KEY=VALUE lines from dhcp_relay output into variables.
 # Usage: eval "$(parse_offer "$output")"  →  $YIADDR, $DNS, etc.
 parse_offer() {
@@ -229,7 +303,38 @@ fi
 
 # ---------------------------------------------------------------------------
 echo ""
-echo "==> 8. TFTP — fetch snponly.efi from tftpd sidecar"
+echo "==> 8. DHCPLease — REQUEST for each MAC must create a DHCPLease CR"
+check_lease() {
+  local label="$1" mac="$2" giaddr="$3" expected_ip="${4:-}"
+  local ack lease_name lease_ip
+  ack="$(dhcp_request_relay "$mac" "$giaddr")"
+  eval "$(parse_offer "$ack")"
+  if [[ -z "${YIADDR:-}" ]]; then
+    fail "$label: no ACK received for REQUEST"
+    return
+  fi
+  if [[ -n "$expected_ip" && "$YIADDR" != "$expected_ip" ]]; then
+    fail "$label: ACK yiaddr=$YIADDR — expected $expected_ip"
+    return
+  fi
+  pass "$label: ACK yiaddr=$YIADDR"
+  lease_name="$(echo "$mac" | tr -d ':')"
+  lease_ip="$(kubectl --context "${CONTEXT}" get dhcplease "${lease_name}" \
+    -o jsonpath='{.spec.ip}' 2>/dev/null || true)"
+  if [[ "$lease_ip" == "$YIADDR" ]]; then
+    pass "$label: DHCPLease ${lease_name} .spec.ip=$lease_ip"
+  else
+    fail "$label: DHCPLease ${lease_name} not found or ip mismatch (got '${lease_ip}', expected '$YIADDR')"
+  fi
+}
+
+check_lease "Dell"   "${DELL_MAC}"   "${GIADDR_A}"
+check_lease "HPE"    "${HPE_MAC}"    "${GIADDR_B}"
+check_lease "Lenovo" "${LENOVO_MAC}" "${GIADDR_A}" "192.168.100.200"
+
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> 9. TFTP — fetch snponly.efi from tftpd sidecar"
 tftpd_count=$(kubectl --context "${CONTEXT}" -n "${NS}" get pod \
   -l app.kubernetes.io/name=metaldhcp \
   -o jsonpath='{.items[0].spec.containers[*].name}' 2>/dev/null \
