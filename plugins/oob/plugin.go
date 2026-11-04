@@ -177,13 +177,14 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	var subnetMask net.IPMask
 
 	if entry, ok := k.lookupStaticLease(macKey); ok {
-		log.Debugf("Static lease for MAC %s → %s", mac, entry.ip)
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 		subnetDNS, subnetDomain = entry.dnsServers, entry.domain
-		// Config-file statics skip selectPool; call it here just for the CIDR/netmask.
+		// Static already in memory from a prior request; call selectPool only for the mask.
 		if p, err := k.selectPool(ctx, poolHint); err == nil {
 			subnetMask = cidrMask(p.CIDR)
 		}
+		ones, _ := subnetMask.Size()
+		log.Debugf("Static lease for MAC %s → %s/%d", mac, leaseIP, ones)
 	} else {
 		// Select pool once: used for the MAC filter and later for DNS/domain/responseDelay.
 		pool, poolErr := k.selectPool(ctx, poolHint)
@@ -197,7 +198,8 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		// selectPool/oobSubnetPools may have seeded CR-based static leases; re-check before
 		// the MAC filter so statically configured MACs always bypass the allowlist.
 		if entry, ok := k.lookupStaticLease(macKey); ok {
-			log.Debugf("Static lease (CR-seeded) for MAC %s → %s", mac, entry.ip)
+			ones, _ := subnetMask.Size()
+			log.Debugf("Static lease (CR-seeded) for MAC %s → %s/%d", mac, entry.ip, ones)
 			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		} else {
@@ -279,7 +281,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
 	if req.MessageType() == dhcpv4.MessageTypeRequest {
-		if err := k.applyLease(ctx, mac, leaseIP, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
+		if err := k.applyLease(ctx, mac, leaseIP, subnetMask, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
 			log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 		}
 	}

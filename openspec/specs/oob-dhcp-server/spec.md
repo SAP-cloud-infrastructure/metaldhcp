@@ -46,8 +46,8 @@ take precedence when present.
 
 ### Requirement: DHCPLease CR written per lease
 The system SHALL create or update a `DHCPLease` CR (group `dhcp.metal.ironcore.dev`) on
-every successful address assignment, recording `macAddress`, `ip`, `leaseTime`, and
-`clientID`.
+every successful address assignment, recording `macAddress`, `ip`, `subnet`, `gateway`,
+`leaseTime`, and `clientID`.
 
 #### Scenario: New lease
 - **WHEN** an IP is allocated to a MAC address for the first time
