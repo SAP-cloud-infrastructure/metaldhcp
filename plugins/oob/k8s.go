@@ -437,11 +437,12 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 // applyLease upserts the DHCPLease for a MAC. The object name is the normalized MAC so re-leases
 // patch the same object and never create duplicates. vendor is stored as an annotation when
 // vendor-lookup is enabled and non-empty.
-func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, gateway, clientID, hostname, vendor string, leaseTime time.Duration) error {
+func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, mask net.IPMask, gateway, clientID, hostname, vendor string, leaseTime time.Duration) error {
 	mutate := func(lease *metaldhcpv1alpha1.DHCPLease) {
 		lease.Spec.MACAddress = mac.String()
 		lease.Spec.IP = ip.String()
 		lease.Spec.Gateway = gateway
+		lease.Spec.Subnet = (&net.IPNet{IP: ip.Mask(mask), Mask: mask}).String()
 		lease.Spec.ClientID = clientID
 		lease.Spec.Hostname = hostname
 		if leaseTime > 0 {
@@ -481,7 +482,8 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 		return err
 	}
 
-	log.Infof("DHCPLease %s %s (MAC %s, IP %s)", lease.Name, result, mac, ip)
+	ones, _ := mask.Size()
+	log.Infof("DHCPLease %s %s (MAC %s, IP %s/%d)", lease.Name, result, mac, ip, ones)
 	return nil
 }
 

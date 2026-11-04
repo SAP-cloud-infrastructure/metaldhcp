@@ -16,10 +16,11 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="MAC",type=string,JSONPath=`.spec.macAddress`
-// +kubebuilder:printcolumn:name="Hostname",type=string,JSONPath=`.spec.hostname`
 // +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.spec.ip`
-// +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`
+// +kubebuilder:printcolumn:name="Subnet",type=string,JSONPath=`.spec.subnet`
+// +kubebuilder:printcolumn:name="Hostname",type=string,JSONPath=`.spec.hostname`
+// +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`,priority=1
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=`.spec.leaseExpiresAt`
 // +kubebuilder:printcolumn:name="Vendor",type=string,JSONPath=`.metadata.annotations['dhcp\.metal\.ironcore\.dev/vendor']`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.macAddress`
@@ -40,6 +41,9 @@ type DHCPLeaseSpec struct {
 
 	// Gateway is the pool gateway for the assigned address.
 	Gateway string `json:"gateway,omitempty"`
+
+	// Subnet is the pool subnet CIDR for the assigned address (e.g. "10.219.0.96/27").
+	Subnet string `json:"subnet,omitempty"`
 
 	// LeaseTime is the lease duration offered for this address. Updated on re-lease.
 	LeaseTime *metav1.Duration `json:"leaseTime,omitempty"`
