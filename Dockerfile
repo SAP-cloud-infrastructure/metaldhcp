@@ -59,7 +59,7 @@ COPY --from=builder /workspace/metaldhcp /metaldhcp
 RUN /sbin/setcap 'cap_net_bind_service,cap_net_raw=+ep' /metaldhcp
 
 FROM alpine:3.22 AS network-init
-RUN apk add --no-cache iproute2 iptables kmod
+RUN apk add --no-cache iproute2 iptables kmod iputils
 
 FROM gcr.io/distroless/base-debian12 AS output-image
 
