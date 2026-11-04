@@ -4,7 +4,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "metaldhcp.fullname" . }}
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "metaldhcp.namespace" . }}
   labels:
     {{- include "metaldhcp.labels" . | nindent 4 }}
 spec:
@@ -21,6 +21,9 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "metaldhcp.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "metaldhcp.fullname" . }}
       hostNetwork: true
@@ -115,6 +118,10 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
+            {{- if .Values.remoteAPIServer }}
+            - name: KUBECONFIG
+              value: /var/run/remote-kubeconfig/kubeconfig
+            {{- end }}
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -129,6 +136,12 @@ spec:
             - name: config
               mountPath: /etc/metaldhcp
               readOnly: true
+            {{- if .Values.remoteAPIServer }}
+            - name: remote-kubeconfig
+              mountPath: /var/run/remote-kubeconfig
+            - name: remote-serviceaccount
+              mountPath: /var/run/secrets/kubernetes.io/remote-serviceaccount
+            {{- end }}
             {{- if .Values.webhook.enabled }}
             - name: webhook-cert
               mountPath: /etc/metaldhcp/webhook
@@ -210,5 +223,18 @@ spec:
         {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
         - name: ipxe-override
           emptyDir: {}
+        {{- end }}
+        {{- if .Values.remoteAPIServer }}
+        - name: remote-kubeconfig
+          configMap:
+            name: {{ .Release.Name }}-remote-kubeconfig
+        - name: remote-serviceaccount
+          secret:
+            secretName: {{ .Release.Name }}-remote-kubeconfig
+            items:
+              - key: token
+                path: token
+              - key: bundle.crt
+                path: ca.crt
         {{- end }}
       terminationGracePeriodSeconds: 30

@@ -9,7 +9,7 @@ metadata:
     {{- include "metaldhcp.labels" . | nindent 4 }}
   {{- if .Values.webhook.certManager.enabled }}
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Values.namespace }}/{{ include "metaldhcp.fullname" . }}-webhook
+    cert-manager.io/inject-ca-from: {{ include "metaldhcp.namespace" . }}/{{ include "metaldhcp.fullname" . }}-webhook
   {{- end }}
 webhooks:
   - name: oobsubnet.dhcp.metal.ironcore.dev
@@ -24,7 +24,7 @@ webhooks:
     clientConfig:
       service:
         name: {{ include "metaldhcp.fullname" . }}
-        namespace: {{ .Values.namespace }}
+        namespace: {{ include "metaldhcp.namespace" . }}
         port: {{ .Values.webhook.port }}
         path: /validate-oobsubnet
 {{- end }}
