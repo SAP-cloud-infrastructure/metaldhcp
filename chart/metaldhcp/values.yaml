@@ -6,6 +6,11 @@ image:
   tag: ""  # defaults to Chart.appVersion
   pullPolicy: IfNotPresent
 
+networkInit:
+  image:
+    repository: ghcr.io/sap-cloud-infrastructure/metaldhcp-network-init
+    tag: ""  # defaults to Chart.appVersion
+
 # Namespace where metaldhcp runs and where DHCPLease objects are written.
 namespace: metaldhcp-system
 
@@ -30,6 +35,9 @@ server:
 
 # oob plugin configuration — maps directly to the oob.yaml config file.
 oob:
+  # namespace where DHCPLease CRs are written and OOBSubnet CRs are read from.
+  # Defaults to the release namespace when empty.
+  namespace: ""
   # subnetLabels selects OOBSubnet CRs as pools. Ignored when subnets is non-empty.
   subnetLabels: []
   # - key: dhcp
