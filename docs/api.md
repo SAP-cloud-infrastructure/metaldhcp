@@ -76,6 +76,7 @@ _Appears in:_
 | `macAddress` _string_ |  |  | Required: \{\} <br /> |
 | `ip` _string_ |  |  | Required: \{\} <br /> |
 | `gateway` _string_ | Gateway is the pool gateway for the assigned address. |  |  |
+| `subnet` _string_ | Subnet is the pool subnet CIDR for the assigned address (e.g. "10.219.0.96/27"). |  |  |
 | `leaseTime` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | LeaseTime is the lease duration offered for this address. Updated on re-lease. |  |  |
 | `clientID` _string_ | ClientID is the DHCPv4 client identifier (option 61) from the request, if present. |  |  |
 | `hostname` _string_ | Hostname is the client hostname, either from option 12 in the request or from a<br />static lease config entry. |  |  |

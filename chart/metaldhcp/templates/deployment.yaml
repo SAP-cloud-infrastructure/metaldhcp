@@ -9,6 +9,7 @@ metadata:
     {{- include "metaldhcp.labels" . | nindent 4 }}
 spec:
   replicas: 1
+  revisionHistoryLimit: 10
   strategy:
     type: Recreate
   selector:
@@ -24,6 +25,21 @@ spec:
       serviceAccountName: {{ include "metaldhcp.fullname" . }}
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.kubernetes.io/exclude-from-external-load-balancers
+                    operator: DoesNotExist
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 10
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "metaldhcp.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
       initContainers:
         - name: network-init
           image: "{{ .Values.networkInit.image.repository }}:{{ .Values.networkInit.image.tag | default .Chart.AppVersion }}"
@@ -88,12 +104,14 @@ spec:
               port: health
             initialDelaySeconds: 5
             periodSeconds: 10
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /healthz
               port: health
             initialDelaySeconds: 5
             periodSeconds: 5
+            failureThreshold: 3
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
@@ -193,3 +211,4 @@ spec:
         - name: ipxe-override
           emptyDir: {}
         {{- end }}
+      terminationGracePeriodSeconds: 30
