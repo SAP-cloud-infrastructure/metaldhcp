@@ -150,6 +150,7 @@ _Appears in:_
 | `domain` _string_ | Domain overrides the global DNS search domain (option 15) for clients in this subnet.<br />When empty the global domain value applies. |  |  |
 | `mode` _string_ | Mode selects the MAC filter posture: allowAll serves every MAC (macList ignored),<br />allow serves only MACs in macList (empty => serve nobody), deny serves every MAC<br />except those in macList. | allowAll | Enum: [allowAll allow deny] <br /> |
 | `macList` _string array_ | MacList is the MAC set the filter mode operates on. Entries may be colon-, dash-, or<br />separator-free, any case; they are normalized before matching. Ignored when Mode is<br />allowAll. |  | Optional: \{\} <br /> |
+| `clientIdList` _string array_ | ClientIdList is the DHCP client-identifier set (option 61) the filter mode operates on.<br />Entries are lowercase hex strings. A client is matched when its MAC is in MacList OR its<br />client ID is in ClientIdList. Ignored when Mode is allowAll. |  | Optional: \{\} <br /> |
 | `responseDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | ResponseDelay, when non-zero, delays the DHCP offer by the given duration.<br />Use on catch-all / fallback instances so that instances with a tighter filter<br />can win the race on shared BMC subnets. |  | Optional: \{\} <br /> |
 
 
@@ -157,7 +158,8 @@ _Appears in:_
 
 
 
-StaticLease pins a MAC address to a fixed IP within the subnet, bypassing dynamic allocation.
+StaticLease pins a client to a fixed IP within the subnet, bypassing dynamic allocation.
+Exactly one of MAC or ClientId must be set; the admission webhook enforces this.
 
 
 
@@ -166,8 +168,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `mac` _string_ | MAC is the hardware address of the client, e.g. "00:11:22:33:44:55". |  | Pattern: `^([0-9a-fA-F]\{2\}:)\{5\}[0-9a-fA-F]\{2\}$` <br />Required: \{\} <br /> |
-| `ip` _string_ | IP is the fixed IPv4 address to offer to this MAC. |  | Format: ipv4 <br />Required: \{\} <br /> |
+| `mac` _string_ | MAC is the hardware address of the client, e.g. "00:11:22:33:44:55".<br />Mutually exclusive with ClientId. |  | Pattern: `^([0-9a-fA-F]\{2\}:)\{5\}[0-9a-fA-F]\{2\}$` <br /> |
+| `clientId` _string_ | ClientId is the DHCP client identifier (option 61) as a lowercase hex string.<br />Mutually exclusive with MAC. |  |  |
+| `ip` _string_ | IP is the fixed IPv4 address to offer to this client. |  | Format: ipv4 <br />Required: \{\} <br /> |
 | `hostname` _string_ | Hostname is the optional hostname to include in the DHCP offer (option 12). |  |  |
 
 

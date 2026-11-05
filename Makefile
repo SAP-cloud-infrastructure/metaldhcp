@@ -75,7 +75,7 @@ chart-lint: ## Lint and render the Helm chart.
 
 .PHONY: test-dhcp
 test-dhcp: ## Run all dev DHCP test scenarios against the local kind cluster.
-	./dev/test-dhcp.sh
+	./dev/test-dhcp.py
 
 KIND_CLUSTER_NAME ?= metaldhcp
 KIND_REGISTRY_PORT ?= 5001

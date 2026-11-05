@@ -175,6 +175,11 @@ func (in *OOBSubnetSpec) DeepCopyInto(out *OOBSubnetSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.ClientIdList != nil {
+		in, out := &in.ClientIdList, &out.ClientIdList
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.ResponseDelay != nil {
 		in, out := &in.ResponseDelay, &out.ResponseDelay
 		*out = new(v1.Duration)

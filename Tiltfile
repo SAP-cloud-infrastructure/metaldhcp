@@ -14,10 +14,8 @@ def image_ref(name):
     return "%s/%s" % (reg_host, name)
 
 # --- CRDs (owned by metaldhcp) --------------------------------------------------
-k8s_yaml([
-    "config/crd/bases/dhcp.metal.ironcore.dev_oobsubnets.yaml",
-    "config/crd/bases/dhcp.metal.ironcore.dev_dhcpleases.yaml",
-])
+# CRDs are included via --include-crds in the helm() call below.
+# Naming them here enables resource_deps ordering on "crds".
 k8s_resource(
     new_name="crds",
     objects=[
