@@ -73,6 +73,15 @@ jobs:
         run: |
           helm package chart/metaldhcp --version ${{ steps.chart_version.outputs.version }}
 
+      - name: Prepare -crds variant (CRDs in templates)
+        run: |
+          cp chart/metaldhcp/crds/*.yaml chart/metaldhcp/templates/
+          rm chart/metaldhcp/crds/*.yaml
+
+      - name: Package Helm chart with CRDs in templates
+        run: |
+          helm package chart/metaldhcp --version ${{ steps.chart_version.outputs.version }}-crds
+
       - name: Log in to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -80,3 +89,4 @@ jobs:
       - name: Push Helm chart to GHCR
         run: |
           helm push metaldhcp-${{ steps.chart_version.outputs.version }}.tgz oci://ghcr.io/${{ steps.owner.outputs.value }}/charts
+          helm push metaldhcp-${{ steps.chart_version.outputs.version }}-crds.tgz oci://ghcr.io/${{ steps.owner.outputs.value }}/charts
