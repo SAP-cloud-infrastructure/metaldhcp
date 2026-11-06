@@ -60,6 +60,12 @@ oob:
   domain: dev.metaldhcp.local
   ntpServers:
     - 216.239.35.0
+  tftpFiles:
+    - vendorClass: "PXEClient:Arch:00007"  # x86-64 UEFI → snponly.efi (the baked-in binary)
+      filename: snponly.efi
+    - vendorClass: "PXEClient:Arch:00014"  # ARM64 UEFI → distinct name (selection-only, no binary)
+      filename: ipxe-arm64.efi
+    - filename: fallback.efi                # fallback for all other architectures (selection-only)
 
 debug:
   enabled: true

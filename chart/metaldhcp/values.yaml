@@ -79,6 +79,19 @@ oob:
   ntpServers: []
   # - 132.163.96.1
 
+  # tftpFiles maps client vendor class (DHCP option 60) prefixes to bootfile names
+  # (option 67). When non-empty, the oob plugin selects option 67 per request by prefix
+  # match and sets option 66 to externalIP, stopping the plugin chain so nbp does not
+  # override it. An entry without vendorClass is the fallback for unmatched clients.
+  # When empty, the nbp plugin handles options 66/67 as before (no behaviour change).
+  # The binaries must be delivered to the tftpd container (see tftp.ipxeFiles).
+  tftpFiles: []
+  # - vendorClass: "PXEClient:Arch:00007"  # x86-64 UEFI
+  #   filename: ipxe-x64.efi
+  # - vendorClass: "PXEClient:Arch:00014"  # ARM64 UEFI
+  #   filename: ipxe-arm64.efi
+  # - filename: snponly.efi                # fallback (no vendorClass)
+
   # reclaimGrace is the grace period past a dynamic lease's expiry before its address may be
   # reclaimed for another client. Empty uses the server default (1h).
   reclaimGrace: ""
@@ -128,10 +141,14 @@ debug:
 tftp:
   enabled: false  # nbpFilename is the filename served over TFTP and advertised in DHCP option 67.
   nbpFilename: "snponly.efi"
-  # ipxeURL overrides the baked-in binary: when set, an init container downloads the
-  # file from this URL at Pod startup and serves it instead.
-  # Example: https://boot-operator.runtime.qa-de-1/ipxe.efi
-  ipxeURL: ""
+  # ipxeFiles overrides the baked-in binary: when set, an init container downloads each
+  # file from its url into the shared /ipxe volume at Pod startup and tftpd serves them.
+  # Pair with oob.tftpFiles so DHCP advertises the matching filename per architecture.
+  ipxeFiles: []
+  # - url: https://boot-operator.runtime.qa-de-1/ipxe-x64.efi
+  #   filename: ipxe-x64.efi
+  # - url: https://boot-operator.runtime.qa-de-1/ipxe-arm64.efi
+  #   filename: ipxe-arm64.efi
 
 # webhook configures the OOBSubnet validating admission webhook.
 webhook:
