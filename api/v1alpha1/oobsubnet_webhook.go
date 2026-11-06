@@ -55,14 +55,25 @@ func (s *OOBSubnet) validateStaticLeases() error {
 	}
 
 	var errs []string
-	for _, sl := range s.Spec.StaticLeases {
+	for i, sl := range s.Spec.StaticLeases {
+		ident := fmt.Sprintf("staticLeases[%d]", i)
+
+		if sl.MAC != "" && sl.ClientId != "" {
+			errs = append(errs, fmt.Sprintf("%s: mac and clientId are mutually exclusive; set exactly one", ident))
+			continue
+		}
+		if sl.MAC == "" && sl.ClientId == "" {
+			errs = append(errs, fmt.Sprintf("%s: one of mac or clientId must be set", ident))
+			continue
+		}
+
 		ip := net.ParseIP(sl.IP)
 		if ip == nil {
-			errs = append(errs, fmt.Sprintf("static lease %s has invalid IP %q", sl.MAC, sl.IP))
+			errs = append(errs, fmt.Sprintf("%s has invalid IP %q", ident, sl.IP))
 			continue
 		}
 		if !cidrNet.Contains(ip) {
-			errs = append(errs, fmt.Sprintf("static lease %s → %s is outside subnet CIDR %s", sl.MAC, sl.IP, s.Spec.CIDR))
+			errs = append(errs, fmt.Sprintf("%s → %s is outside subnet CIDR %s", ident, sl.IP, s.Spec.CIDR))
 		}
 	}
 	if len(errs) > 0 {

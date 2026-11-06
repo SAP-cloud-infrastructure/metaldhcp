@@ -44,6 +44,7 @@ spec:
                     {{- include "metaldhcp.selectorLabels" . | nindent 20 }}
                 topologyKey: kubernetes.io/hostname
       initContainers:
+        {{- if .Values.networkInit.enabled }}
         - name: network-init
           image: "{{ .Values.networkInit.image.repository }}:{{ .Values.networkInit.image.tag | default .Chart.AppVersion }}"
           command: ["/bin/sh", "/scripts/dhcp-init.sh"]
@@ -60,6 +61,7 @@ spec:
             - name: lib-modules
               mountPath: /lib/modules
               readOnly: true
+        {{- end }}
         {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
         - name: fetch-ipxe
           image: busybox:1.37
@@ -184,6 +186,7 @@ spec:
               mountPath: /ipxe
           {{- end }}
         {{- end }}
+        {{- if .Values.networkInit.enabled }}
         - name: network-lifecycle
           image: "{{ .Values.networkInit.image.repository }}:{{ .Values.networkInit.image.tag | default .Chart.AppVersion }}"
           command: ["sleep", "infinity"]
@@ -203,6 +206,7 @@ spec:
               mountPath: /scripts
             - name: shared
               mountPath: /shared
+        {{- end }}
       volumes:
         - name: config
           configMap:

@@ -203,7 +203,7 @@ func (k *K8sClient) applyConfigToCR(s api.Subnet, cr *metaldhcpv1alpha1.OOBSubne
 	}
 	staticLeases := make([]metaldhcpv1alpha1.StaticLease, len(s.StaticLeases))
 	for i, sl := range s.StaticLeases {
-		staticLeases[i] = metaldhcpv1alpha1.StaticLease{MAC: sl.MAC, IP: sl.IP, Hostname: sl.Hostname}
+		staticLeases[i] = metaldhcpv1alpha1.StaticLease{MAC: sl.MAC, ClientId: sl.ClientId, IP: sl.IP, Hostname: sl.Hostname}
 	}
 	cr.Spec = metaldhcpv1alpha1.OOBSubnetSpec{
 		CIDR:          s.CIDR,
@@ -217,23 +217,36 @@ func (k *K8sClient) applyConfigToCR(s api.Subnet, cr *metaldhcpv1alpha1.OOBSubne
 		Domain:        s.Domain,
 		Mode:          s.Mode,
 		MacList:       s.MacList,
+		ClientIdList:  s.ClientIdList,
 		ResponseDelay: rd,
 	}
 }
 
-// seedStaticLeases registers static MAC→IP bindings into the allocator and statics map.
+// seedStaticLeases registers static client→IP bindings into the allocator and statics map.
 // gateway, bootURL, dnsServers, and domain are passed directly from the parent subnet.
-// Already-seen MAC keys are skipped so this is safe to call on every request for CR-based subnets.
+// Already-seen keys are skipped so this is safe to call on every request for CR-based subnets.
 func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL string, dnsServers []net.IP, domain string) {
 	for _, sl := range leases {
+		ip := net.ParseIP(sl.IP)
+		if ip == nil {
+			log.Warningf("Skipping static lease with invalid IP %q", sl.IP)
+			continue
+		}
+		entry := staticEntry{ip: ip.To4(), gateway: gateway, bootURL: bootURL, hostname: sl.Hostname, dnsServers: dnsServers, domain: domain}
+
+		if sl.ClientId != "" {
+			cidKey := "cid:" + normalizeClientID(sl.ClientId)
+			if _, ok := k.statics[cidKey]; ok {
+				continue
+			}
+			k.statics[cidKey] = entry
+			log.Infof("Static lease: clientId %s → %s", sl.ClientId, sl.IP)
+			continue
+		}
+
 		mac, err := net.ParseMAC(sl.MAC)
 		if err != nil {
 			log.Warningf("Skipping static lease with invalid MAC %q: %v", sl.MAC, err)
-			continue
-		}
-		ip := net.ParseIP(sl.IP)
-		if ip == nil {
-			log.Warningf("Skipping static lease %s with invalid IP %q", sl.MAC, sl.IP)
 			continue
 		}
 		macKey := helper.NormalizeMAC(mac)
@@ -241,14 +254,28 @@ func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL 
 			continue
 		}
 		k.alloc.Reserve(macKey, ip)
-		k.statics[macKey] = staticEntry{ip: ip.To4(), gateway: gateway, bootURL: bootURL, hostname: sl.Hostname, dnsServers: dnsServers, domain: domain}
+		k.statics[macKey] = entry
 		log.Infof("Static lease: MAC %s → %s", sl.MAC, sl.IP)
 	}
 }
 
-func (k *K8sClient) lookupStaticLease(macKey string) (staticEntry, bool) {
-	e, ok := k.statics[macKey]
-	return e, ok
+// normalizeClientID returns the client ID as a lowercase hex string with any leading "0x" stripped.
+func normalizeClientID(id string) string {
+	id = strings.ToLower(id)
+	id = strings.TrimPrefix(id, "0x")
+	return id
+}
+
+func (k *K8sClient) lookupStaticLease(macKey, clientID string) (staticEntry, bool) {
+	if e, ok := k.statics[macKey]; ok {
+		return e, true
+	}
+	if clientID != "" {
+		if e, ok := k.statics["cid:"+normalizeClientID(clientID)]; ok {
+			return e, true
+		}
+	}
+	return staticEntry{}, false
 }
 
 // seedFromLeases rebuilds in-memory allocator state from the durable DHCPLease ledger so that
@@ -421,12 +448,13 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			Domain:        s.Spec.Domain,
 			Mode:          s.Spec.Mode,
 			MacList:       s.Spec.MacList,
+			ClientIdList:  s.Spec.ClientIdList,
 			ResponseDelay: rd,
 		})
 		if len(s.Spec.StaticLeases) > 0 {
 			leases := make([]api.StaticLease, len(s.Spec.StaticLeases))
 			for i, sl := range s.Spec.StaticLeases {
-				leases[i] = api.StaticLease{MAC: sl.MAC, IP: sl.IP, Hostname: sl.Hostname}
+				leases[i] = api.StaticLease{MAC: sl.MAC, ClientId: sl.ClientId, IP: sl.IP, Hostname: sl.Hostname}
 			}
 			k.seedStaticLeases(leases, s.Spec.Gateway, s.Spec.BootURL, dns, s.Spec.Domain)
 		}

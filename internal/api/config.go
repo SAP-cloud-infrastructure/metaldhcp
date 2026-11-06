@@ -16,6 +16,7 @@ type SubnetLabel struct {
 
 type StaticLease struct {
 	MAC      string `yaml:"mac"`
+	ClientId string `yaml:"clientId"`
 	IP       string `yaml:"ip"`
 	Hostname string `yaml:"hostname,omitempty"`
 }
@@ -36,6 +37,7 @@ type Subnet struct {
 	Domain        string        `yaml:"domain,omitempty"`
 	Mode          string        `yaml:"mode,omitempty"`
 	MacList       []string      `yaml:"macList,omitempty"`
+	ClientIdList  []string      `yaml:"clientIdList,omitempty"`
 	ResponseDelay string        `yaml:"responseDelay,omitempty"` // parsed with time.ParseDuration at bootstrap
 }
 

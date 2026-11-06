@@ -105,6 +105,7 @@ type Pool struct {
 	Domain        string        // optional per-subnet search domain; "" means use global
 	Mode          string        // MAC filter posture: allowAll | allow | deny ("" == allowAll)
 	MacList       []string      // MAC set the mode operates on; normalized before matching
+	ClientIdList  []string      // client-ID set (option 61, hex) the mode operates on alongside MacList
 	ResponseDelay time.Duration // when non-zero, sleep this long before sending the offer
 }
 

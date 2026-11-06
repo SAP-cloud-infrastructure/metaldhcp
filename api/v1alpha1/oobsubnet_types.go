@@ -22,14 +22,19 @@ type OOBSubnet struct {
 	Spec OOBSubnetSpec `json:"spec,omitempty"`
 }
 
-// StaticLease pins a MAC address to a fixed IP within the subnet, bypassing dynamic allocation.
+// StaticLease pins a client to a fixed IP within the subnet, bypassing dynamic allocation.
+// Exactly one of MAC or ClientId must be set; the admission webhook enforces this.
 type StaticLease struct {
 	// MAC is the hardware address of the client, e.g. "00:11:22:33:44:55".
-	// +kubebuilder:validation:Required
+	// Mutually exclusive with ClientId.
 	// +kubebuilder:validation:Pattern=`^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$`
-	MAC string `json:"mac"`
+	MAC string `json:"mac,omitempty"`
 
-	// IP is the fixed IPv4 address to offer to this MAC.
+	// ClientId is the DHCP client identifier (option 61) as a lowercase hex string.
+	// Mutually exclusive with MAC.
+	ClientId string `json:"clientId,omitempty"`
+
+	// IP is the fixed IPv4 address to offer to this client.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Format=ipv4
 	IP string `json:"ip"`
@@ -82,6 +87,12 @@ type OOBSubnetSpec struct {
 	// allowAll.
 	// +kubebuilder:validation:Optional
 	MacList []string `json:"macList,omitempty"`
+
+	// ClientIdList is the DHCP client-identifier set (option 61) the filter mode operates on.
+	// Entries are lowercase hex strings. A client is matched when its MAC is in MacList OR its
+	// client ID is in ClientIdList. Ignored when Mode is allowAll.
+	// +kubebuilder:validation:Optional
+	ClientIdList []string `json:"clientIdList,omitempty"`
 
 	// ResponseDelay, when non-zero, delays the DHCP offer by the given duration.
 	// Use on catch-all / fallback instances so that instances with a tighter filter

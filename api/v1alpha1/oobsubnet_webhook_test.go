@@ -18,11 +18,20 @@ func oobSubnet(cidr string, leases ...StaticLease) *OOBSubnet {
 
 func sl(mac, ip string) StaticLease { return StaticLease{MAC: mac, IP: ip} }
 
+func slCID(clientId, ip string) StaticLease { return StaticLease{ClientId: clientId, IP: ip} }
+
 func TestValidateCreate_Valid(t *testing.T) {
 	s := oobSubnet("10.0.1.0/24", sl("00:11:22:33:44:55", "10.0.1.5"), sl("aa:bb:cc:dd:ee:ff", "10.0.1.6"))
 	_, err := s.ValidateCreate()
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidateCreate_ValidClientId(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24", slCID("ff0102aabb", "10.0.1.7"))
+	if _, err := s.ValidateCreate(); err != nil {
+		t.Fatalf("expected no error for clientId-keyed lease, got: %v", err)
 	}
 }
 
@@ -34,13 +43,54 @@ func TestValidateCreate_NoStaticLeases(t *testing.T) {
 	}
 }
 
+func TestValidateCreate_BothMacAndClientIdRejected(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24", StaticLease{MAC: "00:11:22:33:44:55", ClientId: "ff0102aabb", IP: "10.0.1.5"})
+	_, err := s.ValidateCreate()
+	if err == nil {
+		t.Fatal("expected error when both mac and clientId are set, got nil")
+	}
+	if !containsStr(err.Error(), "mutually exclusive") {
+		t.Errorf("expected 'mutually exclusive' in error, got: %q", err.Error())
+	}
+}
+
+func TestValidateCreate_NeitherMacNorClientIdRejected(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24", StaticLease{IP: "10.0.1.5"})
+	_, err := s.ValidateCreate()
+	if err == nil {
+		t.Fatal("expected error when neither mac nor clientId is set, got nil")
+	}
+	if !containsStr(err.Error(), "one of mac or clientId must be set") {
+		t.Errorf("expected 'one of mac or clientId must be set' in error, got: %q", err.Error())
+	}
+}
+
+func TestValidateCreate_MultipleXORViolations(t *testing.T) {
+	s := oobSubnet("10.0.1.0/24",
+		StaticLease{MAC: "00:11:22:33:44:55", ClientId: "ff0102aabb", IP: "10.0.1.5"},
+		sl("aa:bb:cc:dd:ee:ff", "10.0.1.6"), // valid
+		StaticLease{IP: "10.0.1.7"},
+	)
+	_, err := s.ValidateCreate()
+	if err == nil {
+		t.Fatal("expected error for multiple XOR violations, got nil")
+	}
+	msg := err.Error()
+	if !containsStr(msg, "staticLeases[0]") {
+		t.Errorf("expected 'staticLeases[0]' in error, got: %q", msg)
+	}
+	if !containsStr(msg, "staticLeases[2]") {
+		t.Errorf("expected 'staticLeases[2]' in error, got: %q", msg)
+	}
+}
+
 func TestValidateCreate_SingleOutsideCIDR(t *testing.T) {
 	s := oobSubnet("10.0.1.0/24", sl("00:11:22:33:44:55", "10.99.0.5"))
 	_, err := s.ValidateCreate()
 	if err == nil {
 		t.Fatal("expected error for IP outside CIDR, got nil")
 	}
-	const want = "static lease 00:11:22:33:44:55 → 10.99.0.5 is outside subnet CIDR 10.0.1.0/24"
+	const want = "staticLeases[0] → 10.99.0.5 is outside subnet CIDR 10.0.1.0/24"
 	if err.Error() != want {
 		t.Fatalf("error message mismatch\n got:  %q\nwant: %q", err.Error(), want)
 	}
@@ -58,8 +108,8 @@ func TestValidateCreate_MultipleViolations(t *testing.T) {
 	}
 	msg := err.Error()
 	for _, sub := range []string{
-		"static lease 00:11:22:33:44:55 → 10.99.0.5 is outside subnet CIDR 10.0.1.0/24",
-		"static lease 11:22:33:44:55:66 → 192.168.1.1 is outside subnet CIDR 10.0.1.0/24",
+		"staticLeases[0] → 10.99.0.5 is outside subnet CIDR 10.0.1.0/24",
+		"staticLeases[2] → 192.168.1.1 is outside subnet CIDR 10.0.1.0/24",
 	} {
 		if !containsStr(msg, sub) {
 			t.Errorf("expected error message to contain %q, got: %q", sub, msg)

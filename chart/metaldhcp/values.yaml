@@ -7,6 +7,7 @@ image:
   pullPolicy: IfNotPresent
 
 networkInit:
+  enabled: true
   image:
     repository: ghcr.io/sap-cloud-infrastructure/metaldhcp-network-init
     tag: ""  # defaults to Chart.appVersion

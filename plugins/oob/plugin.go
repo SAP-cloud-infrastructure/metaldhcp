@@ -167,6 +167,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	defer cancel()
 
 	macKey := helper.NormalizeMAC(mac)
+	clientID := clientIdentifier(req)
 
 	var leaseIP net.IP
 	var gateway, bootURL, hostname string
@@ -176,7 +177,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	var responseDelay time.Duration
 	var subnetMask net.IPMask
 
-	if entry, ok := k.lookupStaticLease(macKey); ok {
+	if entry, ok := k.lookupStaticLease(macKey, clientID); ok {
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 		subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		// Static already in memory from a prior request; call selectPool only for the mask.
@@ -197,23 +198,25 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 
 		// selectPool/oobSubnetPools may have seeded CR-based static leases; re-check before
 		// the MAC filter so statically configured MACs always bypass the allowlist.
-		if entry, ok := k.lookupStaticLease(macKey); ok {
-			ones, _ := subnetMask.Size()
-			log.Debugf("Static lease (CR-seeded) for MAC %s → %s/%d", mac, entry.ip, ones)
+		if entry, ok := k.lookupStaticLease(macKey, clientID); ok {
 			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		} else {
-			// MAC filter by mode. macList entries are normalized before matching so any
-			// MAC format works. Empty/unknown mode is treated as allowAll.
+			// MAC/clientId filter by mode. macList entries are normalized before matching.
+			// A client is matched when its MAC is in macList OR its clientId is in clientIdList.
 			switch pool.Mode {
 			case "allow":
-				if !slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey }) {
-					log.Debugf("← DROP %s mac=%s: not in macList for subnet %s (allow)", req.MessageType(), mac, pool.CIDR)
+				macMatch := slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey })
+				cidMatch := clientID != "" && slices.Contains(pool.ClientIdList, normalizeClientID(clientID))
+				if !macMatch && !cidMatch {
+					log.Debugf("← DROP %s mac=%s: not in macList/clientIdList for subnet %s (allow)", req.MessageType(), mac, pool.CIDR)
 					return nil, true
 				}
 			case "deny":
-				if slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey }) {
-					log.Debugf("← DROP %s mac=%s: in macList for subnet %s (deny)", req.MessageType(), mac, pool.CIDR)
+				macMatch := slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey })
+				cidMatch := clientID != "" && slices.Contains(pool.ClientIdList, normalizeClientID(clientID))
+				if macMatch || cidMatch {
+					log.Debugf("← DROP %s mac=%s: in macList/clientIdList for subnet %s (deny)", req.MessageType(), mac, pool.CIDR)
 					return nil, true
 				}
 			}
@@ -232,8 +235,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 			hostname = requestHostname(req)
 			// getIP may have seeded additional CR-based statics; re-check so their hostname,
 			// gateway, and bootURL are used even on the first request.
-			if entry, ok := k.lookupStaticLease(macKey); ok {
-				leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
+			if entry, ok := k.lookupStaticLease(macKey, clientID); ok {
 				subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 				poolLeaseTime = 0
 				responseDelay = 0 // static leases bypass pool delays
@@ -281,7 +283,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
 	if req.MessageType() == dhcpv4.MessageTypeRequest {
-		if err := k.applyLease(ctx, mac, leaseIP, subnetMask, gateway, clientIdentifier(req), hostname, vendor, leaseTime); err != nil {
+		if err := k.applyLease(ctx, mac, leaseIP, subnetMask, gateway, clientID, hostname, vendor, leaseTime); err != nil {
 			log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
 		}
 	}

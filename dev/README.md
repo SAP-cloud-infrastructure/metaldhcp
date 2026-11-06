@@ -52,7 +52,7 @@ dhcping -v -s 192.168.100.1 -h 02:aa:bb:cc:dd:ee -t 3
 Run all scenarios at once:
 
 ```sh
-make test-dhcp   # or ./dev/test-dhcp.sh
+make test-dhcp   # or ./dev/test-dhcp.py
 ```
 
 This sends: a direct udhcpc request, two scapy packets with `giaddr` set (one per pool),

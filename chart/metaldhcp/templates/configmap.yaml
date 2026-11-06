@@ -11,7 +11,7 @@ data:
   config.yaml: |
     server4:
       listen:
-        {{- if and .Values.externalIP (eq .Values.server.listenAddr "0.0.0.0:67") }}
+        {{- if and .Values.externalIP .Values.networkInit.enabled (eq .Values.server.listenAddr "0.0.0.0:67") }}
         - "{{ .Values.externalIP }}:67"
         {{- else }}
         - {{ .Values.server.listenAddr | quote }}
@@ -71,7 +71,11 @@ data:
         {{- with .staticLeases }}
         staticLeases:
           {{- range . }}
-          - mac: {{ .mac | quote }}
+          - {{- if .clientId }}
+            clientId: {{ .clientId | quote }}
+            {{- else }}
+            mac: {{ .mac | quote }}
+            {{- end }}
             ip: {{ .ip }}
             {{- if .hostname }}
             hostname: {{ .hostname }}
@@ -83,6 +87,12 @@ data:
         {{- end }}
         {{- with .macList }}
         macList:
+          {{- range . }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
+        {{- with .clientIdList }}
+        clientIdList:
           {{- range . }}
           - {{ . }}
           {{- end }}
