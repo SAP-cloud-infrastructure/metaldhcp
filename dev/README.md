@@ -52,7 +52,16 @@ dhcping -v -s 192.168.100.1 -h 02:aa:bb:cc:dd:ee -t 3
 Run all scenarios at once:
 
 ```sh
-make test-dhcp   # or ./dev/test-dhcp.py
+make tilt-test   # or ./dev/test-dhcp.py
+```
+
+Run or list individual scenarios by name, feature group, or glob:
+
+```sh
+./dev/test-dhcp.py --list              # show all test names
+./dev/test-dhcp.py tftp                # run the whole tftp group (partial match)
+./dev/test-dhcp.py tftp-x64 static     # a specific test plus the static group
+./dev/test-dhcp.py 'pool-*' --no-setup # glob, skipping pod-ready wait + veth setup
 ```
 
 This sends: a direct udhcpc request, two scapy packets with `giaddr` set (one per pool),

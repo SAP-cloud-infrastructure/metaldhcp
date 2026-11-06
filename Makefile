@@ -64,6 +64,10 @@ docs: crd-ref-docs ## Generate CRD API reference docs.
 test: generate manifests fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
+.PHONY: test-verbose
+test-verbose: generate manifests fmt vet envtest ## Run tests with verbose per-package output.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out -v
+
 ##@ Dev environment
 
 .PHONY: chart-lint
@@ -72,10 +76,6 @@ chart-lint: ## Lint and render the Helm chart.
 	helm lint ./chart/metaldhcp -f dev/values.yaml
 	helm template metaldhcp ./chart/metaldhcp > /dev/null
 	helm template metaldhcp ./chart/metaldhcp -f dev/values.yaml > /dev/null
-
-.PHONY: test-dhcp
-test-dhcp: ## Run all dev DHCP test scenarios against the local kind cluster.
-	./dev/test-dhcp.py
 
 KIND_CLUSTER_NAME ?= metaldhcp
 KIND_REGISTRY_PORT ?= 5001
@@ -97,6 +97,10 @@ tilt-up: kind-create ## Start Tilt (creates cluster if needed).
 .PHONY: tilt-down
 tilt-down: ## Tear down Tilt resources (does not delete the cluster).
 	tilt down --context kind-$(KIND_CLUSTER_NAME)
+
+.PHONY: tilt-test
+tilt-test: ## Run the dev DHCP test scenarios against the Tilt kind cluster (pass TESTS=... to select).
+	./dev/test-dhcp.py $(TESTS)
 
 ##@ Dependencies
 

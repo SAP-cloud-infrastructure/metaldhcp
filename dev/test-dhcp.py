@@ -6,6 +6,8 @@
 # Sends relay-style DHCP DISCOVERs via scapy, captures OFFERs, and checks
 # the response fields. Requires the metaldhcp pod to be ready.
 
+import argparse
+import fnmatch
 import ipaddress
 import os
 import subprocess
@@ -73,6 +75,8 @@ from scapy.all import *
 mac_str = sys.argv[1]
 giaddr  = sys.argv[2]
 cid_hex = sys.argv[3] if len(sys.argv) > 3 else ""
+vclass  = sys.argv[4] if len(sys.argv) > 4 else ""
+ipxe    = sys.argv[5] if len(sys.argv) > 5 else ""
 
 offers  = []
 started = threading.Event()
@@ -92,6 +96,10 @@ time.sleep(0.05)
 opts = [("message-type", "discover")]
 if cid_hex:
     opts.append((61, bytes.fromhex(cid_hex)))
+if vclass:
+    opts.append(("vendor_class_id", vclass.encode()))
+if ipxe:
+    opts.append((175, b"\\x01"))  # iPXE encapsulated options — the phase-2 marker
 opts.append("end")
 
 pkt = (Ether(src=mac_str, dst="ff:ff:ff:ff:ff:ff") /
@@ -127,6 +135,12 @@ if "server_id" in od:
     print(f"SERVER_ID={od['server_id']}")
 if "lease_time" in od:
     print(f"LEASE_TIME={od['lease_time']}")
+if "tftp_server_name" in od:
+    ts = od["tftp_server_name"]
+    print(f"TFTP_SERVER={ts.decode() if isinstance(ts, bytes) else ts}")
+if "boot-file-name" in od:
+    bf = od["boot-file-name"]
+    print(f"BOOTFILE={bf.decode() if isinstance(bf, bytes) else bf}")
 """
 
 _REQUEST_CODE = """\
@@ -242,12 +256,10 @@ def parse_offer(output):
     return result
 
 
-def dhcp_relay(mac, giaddr, *, cid=None):
+def dhcp_relay(mac, giaddr, *, cid=None, vclass=None, ipxe=False):
     """Send a relay DHCP DISCOVER, return parsed OFFER fields or {}."""
-    args = [mac, giaddr]
-    if cid:
-        args.append(cid)
-    return parse_offer(exec_debug(_DISCOVER_CODE, *args))
+    return parse_offer(exec_debug(
+        _DISCOVER_CODE, mac, giaddr, cid or "", vclass or "", "1" if ipxe else ""))
 
 
 def dhcp_request_relay(mac, giaddr):
@@ -259,7 +271,7 @@ def cidr_contains(ip, cidr):
     return ipaddress.ip_address(ip) in ipaddress.ip_network(cidr, strict=False)
 
 
-def main():
+def wait_for_pod():
     print("==> Waiting for metaldhcp pod to be ready...")
     subprocess.run([
         "kubectl", "--context", CONTEXT, "-n", NS,
@@ -267,86 +279,98 @@ def main():
         "-l", "app.kubernetes.io/name=metaldhcp", "--timeout=60s",
     ], check=True)
 
-    print()
+
+def setup_routing():
     print("==> Setup: ensure veth0-server can route responses to both pool subnets")
     exec_debug(_SETUP_CODE, GIADDR_A, GIADDR_B)
 
-    # 1. Dell MAC → pool A
-    print()
-    print("==> 1. Relay DISCOVER — Dell MAC, pool 192.168.100.0/24")
-    r1 = dhcp_relay(DELL_MAC, GIADDR_A)
-    dell_ip = r1.get("YIADDR", "")
-    if not dell_ip:
-        fail("no OFFER received")
-    elif cidr_contains(dell_ip, "192.168.100.0/24"):
-        ok(f"yiaddr {dell_ip} is in 192.168.100.0/24")
-    else:
-        fail(f"yiaddr {dell_ip} is NOT in 192.168.100.0/24")
 
-    # 2. HPE MAC → pool B
+def print_leases():
     print()
-    print("==> 2. Relay DISCOVER — HPE MAC, pool 10.0.2.0/24")
-    r2 = dhcp_relay(HPE_MAC, GIADDR_B)
-    ip2 = r2.get("YIADDR", "")
-    if not ip2:
-        fail("no OFFER received")
-    elif cidr_contains(ip2, "10.0.2.0/24"):
-        ok(f"yiaddr {ip2} is in 10.0.2.0/24")
-    else:
-        fail(f"yiaddr {ip2} is NOT in 10.0.2.0/24")
+    print("==> DHCPLeases:")
+    print(kubectl("-n", NS, "get", "dhcpleases.dhcp.metal.ironcore.dev").stdout or "(none)")
 
-    # 3. Lenovo static lease
-    print()
-    print("==> 3. Static lease — Lenovo MAC should get 192.168.100.200")
-    r3 = dhcp_relay(LENOVO_MAC, GIADDR_A)
-    ip3 = r3.get("YIADDR", "")
-    if not ip3:
-        fail("no OFFER received")
-    elif ip3 == "192.168.100.200":
-        ok(f"yiaddr {ip3} matches static lease")
-    else:
-        fail(f"yiaddr {ip3} — expected 192.168.100.200")
 
-    # 4. Re-lease idempotency
-    print()
-    print("==> 4. Re-lease — Dell MAC should get same IP as test 1")
-    r4 = dhcp_relay(DELL_MAC, GIADDR_A)
-    ip4 = r4.get("YIADDR", "")
-    if not ip4:
+# ---------------------------------------------------------------------------
+# Test scenarios — each is self-contained so it can run in isolation.
+# ---------------------------------------------------------------------------
+
+def t_pool_a():
+    print("==> Relay DISCOVER — Dell MAC, pool 192.168.100.0/24")
+    ip = dhcp_relay(DELL_MAC, GIADDR_A).get("YIADDR", "")
+    if not ip:
+        fail("no OFFER received")
+    elif cidr_contains(ip, "192.168.100.0/24"):
+        ok(f"yiaddr {ip} is in 192.168.100.0/24")
+    else:
+        fail(f"yiaddr {ip} is NOT in 192.168.100.0/24")
+
+
+def t_pool_b():
+    print("==> Relay DISCOVER — HPE MAC, pool 10.0.2.0/24")
+    ip = dhcp_relay(HPE_MAC, GIADDR_B).get("YIADDR", "")
+    if not ip:
+        fail("no OFFER received")
+    elif cidr_contains(ip, "10.0.2.0/24"):
+        ok(f"yiaddr {ip} is in 10.0.2.0/24")
+    else:
+        fail(f"yiaddr {ip} is NOT in 10.0.2.0/24")
+
+
+def t_static_mac():
+    print("==> Static lease — Lenovo MAC should get 192.168.100.200")
+    ip = dhcp_relay(LENOVO_MAC, GIADDR_A).get("YIADDR", "")
+    if not ip:
+        fail("no OFFER received")
+    elif ip == "192.168.100.200":
+        ok(f"yiaddr {ip} matches static lease")
+    else:
+        fail(f"yiaddr {ip} — expected 192.168.100.200")
+
+
+def t_lease_idempotent():
+    print("==> Re-lease — Dell MAC should get the same IP twice")
+    first = dhcp_relay(DELL_MAC, GIADDR_A).get("YIADDR", "")
+    if not first:
+        fail("no OFFER received on first DISCOVER")
+        return
+    second = dhcp_relay(DELL_MAC, GIADDR_A).get("YIADDR", "")
+    if not second:
         fail("no OFFER received on re-lease")
-    elif ip4 == dell_ip:
-        ok(f"yiaddr {ip4} matches first allocation (idempotent)")
+    elif second == first:
+        ok(f"yiaddr {second} matches first allocation (idempotent)")
     else:
-        fail(f"yiaddr {ip4} — expected {dell_ip} on re-lease")
+        fail(f"yiaddr {second} — expected {first} on re-lease")
 
-    # 5. DHCP options
-    print()
-    print("==> 5. DHCP options — OFFER for Dell MAC must carry DNS, domain, NTP")
-    if r1.get("DNS"):
-        ok(f"option 6  DNS={r1['DNS']}")
+
+def t_options():
+    print("==> DHCP options — OFFER for Dell MAC must carry DNS, domain, NTP")
+    r = dhcp_relay(DELL_MAC, GIADDR_A)
+    if r.get("DNS"):
+        ok(f"option 6  DNS={r['DNS']}")
     else:
         fail("option 6 (DNS) missing")
-    if r1.get("DOMAIN"):
-        ok(f"option 15 domain={r1['DOMAIN']}")
+    if r.get("DOMAIN"):
+        ok(f"option 15 domain={r['DOMAIN']}")
     else:
         fail("option 15 (domain) missing")
-    if r1.get("NTP"):
-        ok(f"option 42 NTP={r1['NTP']}")
+    if r.get("NTP"):
+        ok(f"option 42 NTP={r['NTP']}")
     else:
         fail("option 42 (NTP) missing")
 
-    # 6. No-relay drop
-    print()
-    print("==> 6. No-relay drop — giaddr=0.0.0.0 must be silently dropped")
-    r6 = dhcp_relay(DELL_MAC, "0.0.0.0")
-    if not r6:
+
+def t_relay_required():
+    print("==> No-relay drop — giaddr=0.0.0.0 must be silently dropped")
+    r = dhcp_relay(DELL_MAC, "0.0.0.0")
+    if not r:
         ok("no OFFER for direct request (relay required)")
     else:
-        fail(f"unexpected OFFER received: {r6}")
+        fail(f"unexpected OFFER received: {r}")
 
-    # 7. No-pool event
-    print()
-    print("==> 7. No-pool drop — giaddr not in any subnet → NoPoolFound event")
+
+def t_pool_nomatch():
+    print("==> No-pool drop — giaddr not in any subnet → NoPoolFound event")
     exec_debug(_NO_POOL_CODE)
     time.sleep(2)
     ev = kubectl("-n", NS, "get", "events",
@@ -357,9 +381,9 @@ def main():
     else:
         fail("NoPoolFound event not found")
 
-    # 8. DHCPLease creation
-    print()
-    print("==> 8. DHCPLease — REQUEST for each MAC must create a DHCPLease CR")
+
+def t_lease_record():
+    print("==> DHCPLease — REQUEST for each MAC must create a DHCPLease CR")
 
     def check_lease(label, mac, giaddr, expected_ip=None):
         ack = dhcp_request_relay(mac, giaddr)
@@ -384,9 +408,9 @@ def main():
     check_lease("HPE",    HPE_MAC,    GIADDR_B)
     check_lease("Lenovo", LENOVO_MAC, GIADDR_A, "192.168.100.200")
 
-    # 9. TFTP
-    print()
-    print("==> 9. TFTP — fetch snponly.efi from tftpd sidecar")
+
+def t_tftp_fetch():
+    print("==> TFTP — fetch snponly.efi from tftpd sidecar")
     r = kubectl("-n", NS, "get", "pod",
                 "-l", "app.kubernetes.io/name=metaldhcp",
                 "-o", "jsonpath={.items[0].spec.containers[*].name}")
@@ -396,46 +420,195 @@ def main():
         out = exec_debug(_TFTP_CODE).strip()
         ok(f"TFTP snponly.efi received ({out})")
 
-    print()
-    print("==> DHCPLeases:")
-    print(kubectl("-n", NS, "get", "dhcpleases.dhcp.metal.ironcore.dev").stdout or "(none)")
 
-    # 10. clientIdList admit
-    print()
-    print("==> 10. clientIdList admit — MAC not in macList, clientId in clientIdList → OFFER")
-    r10 = dhcp_relay(CID_MAC, GIADDR_A, cid=CID_FILTER_CLIENT)
-    ip10 = r10.get("YIADDR", "")
-    if not ip10:
+def t_filter_admit():
+    print("==> clientIdList admit — MAC not in macList, clientId in clientIdList → OFFER")
+    ip = dhcp_relay(CID_MAC, GIADDR_A, cid=CID_FILTER_CLIENT).get("YIADDR", "")
+    if not ip:
         fail("no OFFER — expected admit via clientIdList")
-    elif cidr_contains(ip10, "192.168.100.0/24"):
-        ok(f"yiaddr {ip10} — admitted via clientIdList (MAC not in macList)")
+    elif cidr_contains(ip, "192.168.100.0/24"):
+        ok(f"yiaddr {ip} — admitted via clientIdList (MAC not in macList)")
     else:
-        fail(f"yiaddr {ip10} is NOT in 192.168.100.0/24")
+        fail(f"yiaddr {ip} is NOT in 192.168.100.0/24")
 
-    # 11. clientId static lease
-    print()
-    print("==> 11. clientId static lease — clientId ff0102aabb should get 192.168.100.201")
-    r11 = dhcp_relay(CID_MAC, GIADDR_A, cid=CID_STATIC_CLIENT)
-    ip11 = r11.get("YIADDR", "")
-    if not ip11:
+
+def t_static_cid():
+    print("==> clientId static lease — clientId ff0102aabb should get 192.168.100.201")
+    ip = dhcp_relay(CID_MAC, GIADDR_A, cid=CID_STATIC_CLIENT).get("YIADDR", "")
+    if not ip:
         fail("no OFFER for clientId static lease")
-    elif ip11 == "192.168.100.201":
-        ok(f"yiaddr {ip11} matches clientId static lease")
+    elif ip == "192.168.100.201":
+        ok(f"yiaddr {ip} matches clientId static lease")
     else:
-        fail(f"yiaddr {ip11} — expected 192.168.100.201")
+        fail(f"yiaddr {ip} — expected 192.168.100.201")
 
-    # 12. clientId drop
-    print()
-    print("==> 12. clientId drop — MAC not in macList, clientId not in clientIdList → no OFFER")
-    r12 = dhcp_relay(UNKNOWN_MAC, GIADDR_A, cid=UNKNOWN_CLIENT)
-    if not r12:
+
+def t_filter_drop():
+    print("==> clientId drop — MAC not in macList, clientId not in clientIdList → no OFFER")
+    r = dhcp_relay(UNKNOWN_MAC, GIADDR_A, cid=UNKNOWN_CLIENT)
+    if not r:
         ok("no OFFER for unknown MAC/clientId (allow mode, not in any list)")
     else:
-        fail(f"unexpected OFFER received: {r12}")
+        fail(f"unexpected OFFER received: {r}")
 
-    print()
-    print("==> DHCPLeases:")
-    print(kubectl("-n", NS, "get", "dhcpleases.dhcp.metal.ironcore.dev").stdout or "(none)")
+
+def t_tftp_x64():
+    print("==> tftpFiles — option 60 PXEClient:Arch:00007 (x86-64) → option 67 snponly.efi")
+    r = dhcp_relay(DELL_MAC, GIADDR_A, vclass="PXEClient:Arch:00007:UNDI:003000")
+    bootfile = r.get("BOOTFILE", "")
+    if not r:
+        fail("no OFFER received for x86-64 arch DISCOVER")
+    elif bootfile == "snponly.efi":
+        ok(f"option 67 bootfile={bootfile} selected by x86-64 vendor class")
+    else:
+        fail(f"option 67 bootfile={bootfile!r} — expected snponly.efi")
+
+
+def t_tftp_arm64():
+    print("==> tftpFiles — option 60 PXEClient:Arch:00014 (ARM64) → option 67 ipxe-arm64.efi")
+    r = dhcp_relay(DELL_MAC, GIADDR_A, vclass="PXEClient:Arch:00014:UNDI:003000")
+    bootfile = r.get("BOOTFILE", "")
+    if not r:
+        fail("no OFFER received for ARM64 arch DISCOVER")
+    elif bootfile == "ipxe-arm64.efi":
+        ok(f"option 67 bootfile={bootfile} selected by ARM64 vendor class")
+    else:
+        fail(f"option 67 bootfile={bootfile!r} — expected ipxe-arm64.efi (fell through to fallback?)")
+
+
+def t_tftp_fallback():
+    print("==> tftpFiles — unmatched option 60 → option 67 fallback.efi")
+    r = dhcp_relay(DELL_MAC, GIADDR_A, vclass="PXEClient:Arch:00099:UNDI:003000")
+    bootfile = r.get("BOOTFILE", "")
+    if not r:
+        fail("no OFFER received for unmatched arch DISCOVER")
+    elif bootfile == "fallback.efi":
+        ok(f"option 67 bootfile={bootfile} selected via fallback entry")
+    else:
+        fail(f"option 67 bootfile={bootfile!r} — expected fallback.efi")
+
+
+def t_ipxe_chain():
+    print("==> iPXE phase 2 (option 175) → option 67 chain URL with ${uuid}")
+    r = dhcp_relay(DELL_MAC, GIADDR_A, ipxe=True)
+    bootfile = r.get("BOOTFILE", "")
+    expected = "https://boot-operator.example.com/boot/ipxe/${uuid}"
+    if not r:
+        fail("no OFFER received for iPXE phase-2 DISCOVER")
+    elif bootfile == expected:
+        ok(f"option 67 bootfile={bootfile} (iPXE chain URL)")
+    else:
+        fail(f"option 67 bootfile={bootfile!r} — expected {expected}")
+
+
+def t_ipxe_nobooturl():
+    print("==> iPXE phase 2 without pool bootURL → no option 67")
+    r = dhcp_relay(HPE_MAC, GIADDR_B, ipxe=True)  # pool 10.0.2.0/24 has no bootURL
+    if not r:
+        fail("no OFFER received for iPXE phase-2 DISCOVER (no bootURL)")
+    elif r.get("BOOTFILE"):
+        fail(f"expected no option 67, got bootfile={r['BOOTFILE']!r}")
+    else:
+        ok("no option 67 for iPXE phase without a pool bootURL")
+
+
+# Ordered registry: name -> (description, function). "all" runs these in order.
+# Names are grouped by feature (feature or feature-detail) so a partial token like
+# "tftp", "pool", "static", "filter", "lease" or "ipxe" selects the whole group.
+TESTS = {
+    "pool-a":           ("Dell MAC allocates from pool 192.168.100.0/24", t_pool_a),
+    "pool-b":           ("HPE MAC allocates from pool 10.0.2.0/24", t_pool_b),
+    "pool-nomatch":     ("Unknown subnet emits a NoPoolFound event", t_pool_nomatch),
+    "relay-required":   ("Direct request (giaddr=0) is dropped", t_relay_required),
+    "filter-admit":     ("clientIdList admits a MAC not in macList", t_filter_admit),
+    "filter-drop":      ("Unknown MAC and clientId get no OFFER", t_filter_drop),
+    "static-mac":       ("MAC static lease returns its IP", t_static_mac),
+    "static-cid":       ("clientId static lease returns its IP", t_static_cid),
+    "lease-idempotent": ("Dell MAC re-lease returns the same IP", t_lease_idempotent),
+    "lease-record":     ("REQUEST creates a DHCPLease CR per MAC", t_lease_record),
+    "options":          ("OFFER carries DNS, domain, NTP options", t_options),
+    "tftp-fetch":       ("tftpd sidecar serves snponly.efi", t_tftp_fetch),
+    "tftp-x64":         ("Vendor class Arch:00007 selects snponly.efi", t_tftp_x64),
+    "tftp-arm64":       ("Vendor class Arch:00014 selects ipxe-arm64.efi", t_tftp_arm64),
+    "tftp-fallback":    ("Unmatched vendor class selects fallback.efi", t_tftp_fallback),
+    "ipxe-chain":       ("iPXE phase 2 (opt 175) sets the ${uuid} chain URL", t_ipxe_chain),
+    "ipxe-nobooturl":   ("iPXE phase 2 with no pool bootURL sets no option 67", t_ipxe_nobooturl),
+}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Smoke-test metaldhcp running in the local kind cluster.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "test selection (each TEST arg is resolved independently):\n"
+            "  exact      an exact test name runs just that test     (options)\n"
+            "  partial    a substring selects every matching test     (tftp -> tftp-fetch,\n"
+            "             i.e. a whole feature group                   tftp-x64, tftp-arm64, ...)\n"
+            "  glob       shell-style wildcards * ? []                (tftp-* , pool-?)\n"
+            "\n"
+            "examples:\n"
+            "  ./dev/test-dhcp.py                  # run all tests\n"
+            "  ./dev/test-dhcp.py --list           # list test names\n"
+            "  ./dev/test-dhcp.py tftp             # run the whole tftp group\n"
+            "  ./dev/test-dhcp.py tftp-x64 static  # one test plus the static group\n"
+            "  ./dev/test-dhcp.py 'pool-*'         # glob (quote to protect from the shell)\n"
+        ),
+    )
+    parser.add_argument(
+        "tests", nargs="*", metavar="TEST",
+        help="test(s) to run: exact name, partial/group token, or glob "
+             "(see 'test selection' below); omit to run all",
+    )
+    parser.add_argument(
+        "-l", "--list", action="store_true",
+        help="list available tests and exit",
+    )
+    parser.add_argument(
+        "--no-setup", action="store_true",
+        help="skip pod-ready wait and veth routing setup",
+    )
+    args = parser.parse_args()
+
+    if args.list:
+        print("Available tests:")
+        for name, (desc, _) in TESTS.items():
+            print(f"  {name:<14} {desc}")
+        print()
+        print("Select by: exact name (options), partial/group token (tftp), "
+              "or glob ('tftp-*').")
+        print("Omit all args to run every test. See --help for examples.")
+        sys.exit(0)
+
+    if args.tests:
+        selected = []
+        for pattern in args.tests:
+            if pattern in TESTS:                              # exact name wins
+                matches = [pattern]
+            elif any(c in pattern for c in "*?["):            # explicit glob
+                matches = fnmatch.filter(TESTS, pattern)
+            else:                                             # partial / substring
+                matches = [n for n in TESTS if pattern in n]
+            if not matches:
+                parser.error(f"no test matches {pattern!r} (run --list to see options)")
+            for name in matches:  # keep TESTS order within a pattern, de-dup across patterns
+                if name not in selected:
+                    selected.append(name)
+    else:
+        selected = list(TESTS)
+
+    if not args.no_setup:
+        wait_for_pod()
+        print()
+        setup_routing()
+
+    for name in selected:
+        desc, fn = TESTS[name]
+        print()
+        print(f"==> [{name}]")
+        fn()
+
+    print_leases()
     print()
     print(f"==> Results: {_passed} passed, {_failed} failed")
     sys.exit(0 if _failed == 0 else 1)

@@ -105,8 +105,10 @@ DHCP options 66 (TFTP server name) and 67 (bootfile name) into every response.
 The iPXE binary (`snponly.efi`, UEFI network-boot only) is compiled from source during
 the Docker build with `DOWNLOAD_PROTO_HTTPS` enabled and DigiCert root CAs embedded,
 so it can fetch the boot image over HTTPS from boot-operator. It is baked into the
-image at `/ipxe/snponly.efi`. Set `tftp.ipxeURL` to download a different binary at
-Pod startup instead.
+image at `/ipxe/snponly.efi`. Set `tftp.ipxeFiles` to download different binaries at
+Pod startup instead; each entry's `filename` is served from `/ipxe` over TFTP. Pair it
+with `oob.tftpFiles` to advertise a per-architecture bootfile (option 67) selected from
+the client's vendor class (option 60).
 
 **Firewall requirement**: UDP/69 must be permitted from the OOB subnet to the
 LoadBalancer IP. This is a deployment prerequisite and is not enforced by the chart.

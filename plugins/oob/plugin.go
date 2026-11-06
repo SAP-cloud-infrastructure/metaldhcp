@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/SAP-cloud-infrastructure/metaldhcp/internal/api"
@@ -310,12 +311,46 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		return resp, true // stop chain; nbp must not run for iPXE phase
 	}
 
+	// tftpFiles configured: oob owns options 66/67 for phase 1. Select a bootfile by
+	// matching option 60 (vendor class) prefix; set options 66/67 on a hit, log a warning
+	// on a miss. Either way the chain stops so nbp cannot inject a global default.
+	if len(k.tftpFiles) > 0 {
+		filename := selectTFTPFile(k.tftpFiles, classID)
+		if filename != "" {
+			if k.serverIP != nil {
+				resp.Options.Update(dhcpv4.OptTFTPServerName(k.serverIP.String()))
+			}
+			resp.Options.Update(dhcpv4.OptBootFileName(filename))
+			log.Infof("← OFFER %s mac=%s yiaddr=%s tftp=%q class=%q", req.MessageType(), mac, leaseIP, filename, classID)
+		} else {
+			log.Warningf("← OFFER %s mac=%s yiaddr=%s: no tftpFiles match for class=%q and no fallback", req.MessageType(), mac, leaseIP, classID)
+		}
+		return resp, true // stop chain; oob owns 66/67 when tftpFiles is set
+	}
+
 	// Phase 1 (PXEClient) or plain DHCP: nbp handles TFTP options (66/67) downstream.
 	// Do NOT set resp.BootFileName here — nbp only sets option 67, not the BOOTP file
 	// field, so setting it to an HTTP URL would cause PXE ROMs that prefer the BOOTP
 	// file field over option 67 to see a non-TFTP path and reject the OFFER.
 	log.Infof("← OFFER %s mac=%s yiaddr=%s bootURL=%q", req.MessageType(), mac, leaseIP, bootURL)
 	return resp, false
+}
+
+// selectTFTPFile returns the bootfile name for classID (DHCP option 60). It returns the
+// first entry whose non-empty VendorClass is a prefix of classID; failing that, the first
+// entry with an empty VendorClass (the fallback). It returns "" when neither matches.
+func selectTFTPFile(files []api.TFTPFile, classID string) string {
+	for _, f := range files {
+		if f.VendorClass != "" && strings.HasPrefix(classID, f.VendorClass) {
+			return f.Filename
+		}
+	}
+	for _, f := range files {
+		if f.VendorClass == "" {
+			return f.Filename
+		}
+	}
+	return ""
 }
 
 // clientIdentifier returns the DHCPv4 client identifier (option 61) as a hex string, or "" when
