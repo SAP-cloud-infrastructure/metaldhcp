@@ -117,6 +117,15 @@ data:
       - {{ . }}
       {{- end }}
     {{- end }}
+    {{- with .Values.oob.tftpFiles }}
+    tftpFiles:
+      {{- range . }}
+      - filename: {{ .filename | quote }}
+        {{- if .vendorClass }}
+        vendorClass: {{ .vendorClass | quote }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
     {{- with .Values.oob.reclaimGrace }}
     reclaimGrace: {{ . }}
     {{- end }}

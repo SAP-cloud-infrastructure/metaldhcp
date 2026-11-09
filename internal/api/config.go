@@ -21,6 +21,13 @@ type StaticLease struct {
 	Hostname string `yaml:"hostname,omitempty"`
 }
 
+// TFTPFile maps a client vendor class (DHCP option 60) prefix to a bootfile name (option 67).
+// An entry with an empty VendorClass is the fallback, used when no prefix matches.
+type TFTPFile struct {
+	VendorClass string `yaml:"vendorClass,omitempty"`
+	Filename    string `yaml:"filename"`
+}
+
 // Subnet is an inline pool definition, managed via the deployment pipeline / Helm values. It
 // is the config-defined alternative to a synced OOBSubnet CR. At startup, each Subnet is
 // bootstrapped to an OOBSubnet CR annotated managed-by: helm; all runtime pool selection then
@@ -61,6 +68,11 @@ type OOBConfig struct {
 
 	// NTPServers is the list of NTP server IPs or hostnames sent in option 42.
 	NTPServers []string `yaml:"ntpServers,omitempty"`
+
+	// TFTPFiles maps vendor class (option 60) prefixes to bootfile names. When non-empty,
+	// the oob plugin sets options 66/67 from the first matching entry (or the fallback entry
+	// with no vendorClass) and stops the plugin chain so nbp does not override option 67.
+	TFTPFiles []TFTPFile `yaml:"tftpFiles,omitempty"`
 
 	// ReclaimGrace is the grace period past a dynamic lease's expiry before its address may
 	// be reclaimed for another client, parsed with time.ParseDuration. Empty uses

@@ -62,14 +62,15 @@ spec:
               mountPath: /lib/modules
               readOnly: true
         {{- end }}
-        {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
+        {{- if and .Values.tftp.enabled .Values.tftp.ipxeFiles }}
         - name: fetch-ipxe
           image: busybox:1.37
-          command:
-            - wget
-            - -O
-            - /ipxe/{{ .Values.tftp.nbpFilename }}
-            - {{ .Values.tftp.ipxeURL | quote }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              {{- range .Values.tftp.ipxeFiles }}
+              wget -O /ipxe/{{ .filename }} {{ .url | quote }}
+              {{- end }}
           volumeMounts:
             - name: ipxe-override
               mountPath: /ipxe
@@ -180,7 +181,7 @@ spec:
             allowPrivilegeEscalation: true
             capabilities:
               add: ["NET_BIND_SERVICE"]
-          {{- if .Values.tftp.ipxeURL }}
+          {{- if .Values.tftp.ipxeFiles }}
           volumeMounts:
             - name: ipxe-override
               mountPath: /ipxe
@@ -226,7 +227,7 @@ spec:
           secret:
             secretName: {{ required "webhook.certSecretName is required when webhook.enabled" .Values.webhook.certSecretName }}
         {{- end }}
-        {{- if and .Values.tftp.enabled .Values.tftp.ipxeURL }}
+        {{- if and .Values.tftp.enabled .Values.tftp.ipxeFiles }}
         - name: ipxe-override
           emptyDir: {}
         {{- end }}

@@ -66,6 +66,7 @@ type K8sClient struct {
 	dnsServers   []net.IP
 	domain       string
 	ntpServers   []net.IP
+	tftpFiles    []api.TFTPFile
 }
 
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
@@ -83,6 +84,7 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 		alloc:        allocator.New(grace),
 		statics:      make(map[string]staticEntry),
 		domain:       cfg.Domain,
+		tftpFiles:    cfg.TFTPFiles,
 	}
 	if cfg.ServerIP != "" {
 		if ip := net.ParseIP(cfg.ServerIP); ip != nil {
