@@ -28,6 +28,25 @@ Both resources belong to API group `dhcp.metal.ironcore.dev`, version `v1alpha1`
 
 CRD manifests are in `config/crd/bases/`.
 
+## Requirements
+
+The following prerequisites are needed to build, run, or develop metaldhcp:
+
+- **Go** 1.21 or later (see `go.mod` for the exact toolchain version)
+- **Linux** — DHCP serving requires Linux; the binary compiles on macOS (via a stub in `go.mod`) but cannot bind port 67 and serve DHCP traffic there
+- **Kubernetes cluster** — a running cluster (v1.26+) with CRDs installed is required when the `oob` plugin is active; either a kubeconfig or an in-cluster service account must be available
+- **Capabilities** — `CAP_NET_BIND_SERVICE` and `CAP_NET_RAW` to bind UDP port 67; in the container image these are granted via `setcap` at build time
+- **Docker** (or compatible container runtime) for building and running the container image; the `Dockerfile` and `Dockerfile.dev` are provided at the root
+- **kubectl** — to install CRDs (`config/crd/bases/`) and inspect `OOBSubnet` / `DHCPLease` objects
+- **Helm 3** — to deploy via the `chart/metaldhcp/` Helm chart
+- **make** — to drive the build, code-generation, and test targets (see the `Build` section)
+- **controller-gen** and **envtest** — fetched automatically by `make generate` / `make test` via the `hack/` scripts
+
+For the local development environment, additional tools are required:
+
+- **kind** — to run a local Kubernetes cluster
+- **Tilt** — to drive the dev loop against the local kind cluster (see [dev/README.md](dev/README.md))
+
 ## Build
 
 ```sh
@@ -122,6 +141,14 @@ The `Hostname` field in `DHCPLease` (populated from static lease config or DHCP 
 ## Dev environment
 
 See [dev/README.md](dev/README.md) for the local kind + Tilt setup, DHCP triggering, relay (giaddr) testing, and static lease examples. The Tilt setup renders the Helm chart from `chart/metaldhcp/` with dev overrides from `dev/values.yaml`.
+
+## Contributing
+
+This project is open to feature requests, suggestions, and bug reports via [GitHub issues](https://github.com/SAP-cloud-infrastructure/metaldhcp/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
+
+## Code of Conduct
+
+We as members, contributors, and leaders pledge to make participation in our community a harassment-free experience for everyone. By participating in this project, you agree to abide by its [Code of Conduct](https://github.com/SAP/.github/blob/main/CODE_OF_CONDUCT.md) at all times.
 
 ## Licensing
 
