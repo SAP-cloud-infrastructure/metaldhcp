@@ -177,8 +177,10 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	var subnetDomain string
 	var responseDelay time.Duration
 	var subnetMask net.IPMask
+	var isStaticLease bool
 
 	if entry, ok := k.lookupStaticLease(macKey, clientID); ok {
+		isStaticLease = true
 		leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 		subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		// Static already in memory from a prior request; call selectPool only for the mask.
@@ -200,6 +202,7 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		// selectPool/oobSubnetPools may have seeded CR-based static leases; re-check before
 		// the MAC filter so statically configured MACs always bypass the allowlist.
 		if entry, ok := k.lookupStaticLease(macKey, clientID); ok {
+			isStaticLease = true
 			leaseIP, gateway, bootURL, hostname = entry.ip, entry.gateway, entry.bootURL, entry.hostname
 			subnetDNS, subnetDomain = entry.dnsServers, entry.domain
 		} else {
@@ -284,8 +287,14 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 		resp.Options.Update(dhcpv4.OptHostName(hostname))
 	}
 	if req.MessageType() == dhcpv4.MessageTypeRequest {
-		if err := k.applyLease(ctx, mac, leaseIP, subnetMask, gateway, clientID, hostname, vendor, leaseTime); err != nil {
-			log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+		if isStaticLease {
+			if err := k.applyStaticLease(ctx, mac, clientID, leaseIP, subnetMask, gateway, hostname); err != nil {
+				log.Errorf("Failed to record static DHCPLease for MAC %s: %s", mac, err)
+			}
+		} else {
+			if err := k.applyLease(ctx, mac, leaseIP, subnetMask, gateway, clientID, hostname, vendor, leaseTime); err != nil {
+				log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+			}
 		}
 	}
 

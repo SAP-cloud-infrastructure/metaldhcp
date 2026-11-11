@@ -522,6 +522,8 @@ func (k *K8sClient) applyStaticLease(ctx context.Context, mac net.HardwareAddr, 
 		}
 		lease.Spec.ClientID = clientID
 		lease.Spec.Hostname = hostname
+		lease.Spec.LeaseTime = nil
+		lease.Spec.LeaseExpiresAt = nil
 	}
 	lease := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(ip)}}
 	result, err := controllerutil.CreateOrPatch(ctx, k.Client, lease, func() error {
