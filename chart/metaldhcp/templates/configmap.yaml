@@ -129,3 +129,6 @@ data:
     {{- with .Values.oob.reclaimGrace }}
     reclaimGrace: {{ . }}
     {{- end }}
+    {{- if .Values.oob.publishStaticLeases }}
+    publishStaticLeases: true
+    {{- end }}

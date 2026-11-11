@@ -58,15 +58,16 @@ type staticEntry struct {
 }
 
 type K8sClient struct {
-	Client       client.Client
-	SubnetLabels []api.SubnetLabel
-	alloc        *allocator.Allocator
-	statics      map[string]staticEntry // normalized MAC key -> static binding
-	serverIP     net.IP
-	dnsServers   []net.IP
-	domain       string
-	ntpServers   []net.IP
-	tftpFiles    []api.TFTPFile
+	Client              client.Client
+	SubnetLabels        []api.SubnetLabel
+	alloc               *allocator.Allocator
+	statics             map[string]staticEntry // normalized MAC key -> static binding
+	serverIP            net.IP
+	dnsServers          []net.IP
+	domain              string
+	ntpServers          []net.IP
+	tftpFiles           []api.TFTPFile
+	publishStaticLeases bool
 }
 
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
@@ -79,12 +80,13 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 		}
 	}
 	k := &K8sClient{
-		Client:       kubernetes.GetClient(),
-		SubnetLabels: cfg.SubnetLabels,
-		alloc:        allocator.New(grace),
-		statics:      make(map[string]staticEntry),
-		domain:       cfg.Domain,
-		tftpFiles:    cfg.TFTPFiles,
+		Client:              kubernetes.GetClient(),
+		SubnetLabels:        cfg.SubnetLabels,
+		alloc:               allocator.New(grace),
+		statics:             make(map[string]staticEntry),
+		domain:              cfg.Domain,
+		tftpFiles:           cfg.TFTPFiles,
+		publishStaticLeases: cfg.PublishStaticLeases,
 	}
 	if cfg.ServerIP != "" {
 		if ip := net.ParseIP(cfg.ServerIP); ip != nil {
@@ -141,6 +143,19 @@ func (k *K8sClient) bootstrapConfigSubnets(ctx context.Context, subnets []api.Su
 	for _, s := range subnets {
 		if err := k.bootstrapSubnet(ctx, s, byCIDR[s.CIDR]); err != nil {
 			return err
+		}
+		if k.publishStaticLeases && len(s.StaticLeases) > 0 {
+			var mask net.IPMask
+			if _, cidr, err := net.ParseCIDR(s.CIDR); err == nil {
+				mask = cidr.Mask
+			}
+			var dns []net.IP
+			for _, srv := range s.DNSServers {
+				if ip := net.ParseIP(srv); ip != nil {
+					dns = append(dns, ip)
+				}
+			}
+			k.seedStaticLeases(ctx, s.StaticLeases, mask, s.Gateway, s.BootURL, dns, s.Domain)
 		}
 	}
 	return nil
@@ -227,7 +242,9 @@ func (k *K8sClient) applyConfigToCR(s api.Subnet, cr *metaldhcpv1alpha1.OOBSubne
 // seedStaticLeases registers static client→IP bindings into the allocator and statics map.
 // gateway, bootURL, dnsServers, and domain are passed directly from the parent subnet.
 // Already-seen keys are skipped so this is safe to call on every request for CR-based subnets.
-func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL string, dnsServers []net.IP, domain string) {
+// When publishStaticLeases is enabled, a DHCPLease CR is upserted for each new entry so that
+// statically-configured BMCs (which never send DHCP packets) are visible to MOO.
+func (k *K8sClient) seedStaticLeases(ctx context.Context, leases []api.StaticLease, mask net.IPMask, gateway, bootURL string, dnsServers []net.IP, domain string) {
 	for _, sl := range leases {
 		ip := net.ParseIP(sl.IP)
 		if ip == nil {
@@ -243,6 +260,11 @@ func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL 
 			}
 			k.statics[cidKey] = entry
 			log.Infof("Static lease: clientId %s → %s", sl.ClientId, sl.IP)
+			if k.publishStaticLeases {
+				if err := k.applyStaticLease(ctx, nil, sl.ClientId, ip.To4(), mask, gateway, sl.Hostname); err != nil {
+					log.Warningf("Failed to publish DHCPLease for clientId %s: %v", sl.ClientId, err)
+				}
+			}
 			continue
 		}
 
@@ -258,6 +280,11 @@ func (k *K8sClient) seedStaticLeases(leases []api.StaticLease, gateway, bootURL 
 		k.alloc.Reserve(macKey, ip)
 		k.statics[macKey] = entry
 		log.Infof("Static lease: MAC %s → %s", sl.MAC, sl.IP)
+		if k.publishStaticLeases {
+			if err := k.applyStaticLease(ctx, mac, "", ip.To4(), mask, gateway, sl.Hostname); err != nil {
+				log.Warningf("Failed to publish DHCPLease for MAC %s: %v", sl.MAC, err)
+			}
+		}
 	}
 }
 
@@ -315,6 +342,9 @@ func (k *K8sClient) seedFromLeases(ctx context.Context) error {
 	seeded := 0
 	for _, i := range chosen {
 		l := &leases.Items[i]
+		if l.Spec.MACAddress == "" {
+			continue // clientId-only static lease; allocator state is restored from OOBSubnet CRs
+		}
 		mac, err := net.ParseMAC(l.Spec.MACAddress)
 		if err != nil {
 			log.Warningf("Skipping DHCPLease %s with invalid MAC %q: %v", l.Name, l.Spec.MACAddress, err)
@@ -349,10 +379,17 @@ func leaseDedupPriority(l *metaldhcpv1alpha1.DHCPLease) time.Time {
 	return time.Unix(1<<62, 0)
 }
 
-// deleteLeaseByName removes the DHCPLease with the given object name (the normalized MAC),
-// treating an already-absent object as success.
-func (k *K8sClient) deleteLeaseByName(ctx context.Context, name string) error {
-	lease := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: name}}
+// leaseObjectName returns the Kubernetes object name for a DHCPLease given its IP address.
+// All leases — dynamic and static — use the same IP-based naming so that a static CR is
+// updated in place if the BMC later sends a live DHCP packet.
+func leaseObjectName(ip net.IP) string {
+	return strings.ReplaceAll(ip.String(), ".", "-")
+}
+
+// deleteLeaseByIP removes the DHCPLease named after the given IP, treating an already-absent
+// object as success.
+func (k *K8sClient) deleteLeaseByIP(ctx context.Context, ip net.IP) error {
+	lease := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(ip)}}
 	if err := k.Client.Delete(ctx, lease); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -376,7 +413,7 @@ func (k *K8sClient) getIP(ctx context.Context, poolHint net.IP, mac net.Hardware
 	if evicted != "" {
 		// An expired dynamic lease was reclaimed to free this address; drop its stale CR so
 		// the ledger keeps one DHCPLease per IP and a restart does not re-seed it.
-		if derr := k.deleteLeaseByName(ctx, evicted); derr != nil {
+		if derr := k.deleteLeaseByIP(ctx, leaseIP); derr != nil {
 			log.Warningf("Failed to delete reclaimed DHCPLease %s: %v", evicted, derr)
 		} else {
 			log.Infof("Reclaimed expired lease %s: freed %s for MAC %s", evicted, leaseIP, mac)
@@ -458,15 +495,51 @@ func (k *K8sClient) oobSubnetPools(ctx context.Context) ([]allocator.Pool, error
 			for i, sl := range s.Spec.StaticLeases {
 				leases[i] = api.StaticLease{MAC: sl.MAC, ClientId: sl.ClientId, IP: sl.IP, Hostname: sl.Hostname}
 			}
-			k.seedStaticLeases(leases, s.Spec.Gateway, s.Spec.BootURL, dns, s.Spec.Domain)
+			var mask net.IPMask
+			if _, cidr, err := net.ParseCIDR(s.Spec.CIDR); err == nil {
+				mask = cidr.Mask
+			}
+			k.seedStaticLeases(ctx, leases, mask, s.Spec.Gateway, s.Spec.BootURL, dns, s.Spec.Domain)
 		}
 	}
 	return pools, nil
 }
 
-// applyLease upserts the DHCPLease for a MAC. The object name is the normalized MAC so re-leases
-// patch the same object and never create duplicates. vendor is stored as an annotation when
-// vendor-lookup is enabled and non-empty.
+// applyStaticLease upserts a DHCPLease CR for a static lease entry without DHCP traffic.
+// When mac is non-nil it is stored in MACAddress; for clientId-only entries MACAddress is
+// left empty. leaseTime is always zero so the CR carries no expiry and is never reclaimed.
+func (k *K8sClient) applyStaticLease(ctx context.Context, mac net.HardwareAddr, clientID string, ip net.IP, mask net.IPMask, gateway, hostname string) error {
+	var macStr string
+	if mac != nil {
+		macStr = mac.String()
+	}
+	mutate := func(lease *metaldhcpv1alpha1.DHCPLease) {
+		lease.Spec.MACAddress = macStr
+		lease.Spec.IP = ip.String()
+		lease.Spec.Gateway = gateway
+		if mask != nil {
+			lease.Spec.Subnet = (&net.IPNet{IP: ip.Mask(mask), Mask: mask}).String()
+		}
+		lease.Spec.ClientID = clientID
+		lease.Spec.Hostname = hostname
+		lease.Spec.LeaseTime = nil
+		lease.Spec.LeaseExpiresAt = nil
+	}
+	lease := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(ip)}}
+	result, err := controllerutil.CreateOrPatch(ctx, k.Client, lease, func() error {
+		mutate(lease)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	log.Infof("Static DHCPLease %s %s (IP %s)", lease.Name, result, ip)
+	return nil
+}
+
+// applyLease upserts the DHCPLease for a dynamic allocation. The object is named after the
+// assigned IP so that a static CR is patched in place if a BMC later sends a live DHCP packet.
+// vendor is stored as an annotation when vendor-lookup is enabled and non-empty.
 func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net.IP, mask net.IPMask, gateway, clientID, hostname, vendor string, leaseTime time.Duration) error {
 	mutate := func(lease *metaldhcpv1alpha1.DHCPLease) {
 		lease.Spec.MACAddress = mac.String()
@@ -491,7 +564,7 @@ func (k *K8sClient) applyLease(ctx context.Context, mac net.HardwareAddr, ip net
 	newLease := func() *metaldhcpv1alpha1.DHCPLease {
 		return &metaldhcpv1alpha1.DHCPLease{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: helper.NormalizeMAC(mac),
+				Name: leaseObjectName(ip),
 			},
 		}
 	}

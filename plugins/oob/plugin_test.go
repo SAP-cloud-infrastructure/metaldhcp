@@ -112,13 +112,20 @@ func discoverIPXE(mac net.HardwareAddr, giaddr net.IP) (*dhcpv4.DHCPv4, *dhcpv4.
 	return req, resp
 }
 
-// deferDeleteLease schedules deletion of the DHCPLease for mac after the current spec.
+// deferDeleteLease schedules deletion of any DHCPLease whose MACAddress matches mac.
+// Uses a list scan rather than a name lookup so IP-based naming doesn't require knowing
+// the allocated IP at cleanup-registration time.
 func deferDeleteLease(mac net.HardwareAddr) {
 	DeferCleanup(func(ctx SpecContext) {
-		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+		list := &metaldhcpv1alpha1.DHCPLeaseList{}
+		if err := crClient.List(ctx, list); err != nil {
+			return
 		}
-		_ = crClient.Delete(ctx, lease)
+		for i := range list.Items {
+			if list.Items[i].Spec.MACAddress == mac.String() {
+				_ = crClient.Delete(ctx, &list.Items[i])
+			}
+		}
 	})
 }
 
@@ -146,7 +153,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(outR).NotTo(BeNil())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
@@ -187,7 +194,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(outR).NotTo(BeNil())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
@@ -271,7 +278,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(outR).NotTo(BeNil())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(ctx, Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.IP", staticIP),
@@ -340,7 +347,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(outR1).NotTo(BeNil())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out1.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(HaveField("Spec.IP", firstIP))
 
@@ -390,7 +397,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(outR).NotTo(BeNil())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
@@ -488,6 +495,87 @@ var _ = Describe("OOB plugin handler4", func() {
 			g.Expect(list.Items).To(HaveLen(1))
 			g.Expect(list.Items[0].Spec.MACAddress).To(Equal(macB.String()))
 			g.Expect(list.Items[0].Spec.IP).To(Equal(onlyIP))
+		}).Should(Succeed())
+	})
+
+	It("allows client2 to acquire client1's deleted IP after server restart; client1 then gets a new IP", func(ctx SpecContext) {
+		// Demonstrates the full "delete lease → client2 gets freed IP → client1 gets new IP"
+		// flow. Deleting the DHCPLease CR (step 3) simulates what deleteLeaseByIP does during
+		// expiry-based reclaim. A server restart re-seeds from surviving CRs so the deleted
+		// IP is treated as free on the next request.
+		const (
+			cidr = "10.47.0.0/24"
+			ipA  = "10.47.0.10"
+			ipB  = "10.47.0.11"
+		)
+
+		cfg := api.OOBConfig{
+			Subnets: []api.Subnet{{
+				CIDR:       cidr,
+				Gateway:    "10.47.0.1",
+				RangeStart: ipA,
+				RangeEnd:   ipB,
+			}},
+		}
+
+		macA, err := net.ParseMAC(dellMAC)
+		Expect(err).NotTo(HaveOccurred())
+		macB, err := net.ParseMAC(hpeMAC)
+		Expect(err).NotTo(HaveOccurred())
+		deferDeleteLease(macA)
+		deferDeleteLease(macB)
+
+		// client1 acquires IP A.
+		h1 := buildPlugin(cfg)
+		reqA, respA := discoverRelay(macA, net.ParseIP("10.47.0.1"))
+		outA, dropA := h1(reqA, respA)
+		Expect(dropA).To(BeFalse())
+		Expect(outA).NotTo(BeNil())
+		Expect(outA.YourIPAddr.String()).To(Equal(ipA))
+
+		reqRA, respRA := requestRelay(macA, net.ParseIP("10.47.0.1"), outA.YourIPAddr)
+		_, dropRA := h1(reqRA, respRA)
+		Expect(dropRA).To(BeFalse())
+
+		// Wait for the CR to be written, then delete it ("delete lease").
+		leaseA := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(outA.YourIPAddr)}}
+		Eventually(ctx, Object(leaseA)).Should(HaveField("Spec.MACAddress", macA.String()))
+		Expect(crClient.Delete(ctx, leaseA)).To(Succeed())
+
+		// Server restart: seeds from remaining CRs (none for IP A → IP A is free).
+		h2 := buildPlugin(cfg)
+
+		// client2 gets IP A (first free IP after restart).
+		reqB, respB := discoverRelay(macB, net.ParseIP("10.47.0.1"))
+		outB, dropB := h2(reqB, respB)
+		Expect(dropB).To(BeFalse())
+		Expect(outB).NotTo(BeNil())
+		Expect(outB.YourIPAddr.String()).To(Equal(ipA), "client2 must get the freed IP A")
+
+		reqRB, respRB := requestRelay(macB, net.ParseIP("10.47.0.1"), outB.YourIPAddr)
+		_, dropRB := h2(reqRB, respRB)
+		Expect(dropRB).To(BeFalse())
+
+		// client1 re-requests: IP A is now live for client2, IP B is free → client1 gets IP B.
+		reqA2, respA2 := discoverRelay(macA, net.ParseIP("10.47.0.1"))
+		outA2, dropA2 := h2(reqA2, respA2)
+		Expect(dropA2).To(BeFalse())
+		Expect(outA2).NotTo(BeNil())
+		Expect(outA2.YourIPAddr.String()).To(Equal(ipB), "client1 must get new IP B")
+
+		reqRA2, respRA2 := requestRelay(macA, net.ParseIP("10.47.0.1"), outA2.YourIPAddr)
+		_, dropRA2 := h2(reqRA2, respRA2)
+		Expect(dropRA2).To(BeFalse())
+
+		// Final CR state: IP A → client2, IP B → client1; names are IP-based.
+		Eventually(func(g Gomega) {
+			lA := &metaldhcpv1alpha1.DHCPLease{}
+			g.Expect(crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(net.ParseIP(ipA))}, lA)).To(Succeed())
+			g.Expect(lA.Spec.MACAddress).To(Equal(macB.String()))
+
+			lB := &metaldhcpv1alpha1.DHCPLease{}
+			g.Expect(crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(net.ParseIP(ipB))}, lB)).To(Succeed())
+			g.Expect(lB.Spec.MACAddress).To(Equal(macA.String()))
 		}).Should(Succeed())
 	})
 
@@ -635,7 +723,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// DHCPLease should record the hostname
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(ctx, Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.IP", staticIP),
@@ -720,7 +808,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Expect(dropR).To(BeFalse(), "mac=%s", tc.mac)
 
 			lease := &metaldhcpv1alpha1.DHCPLease{
-				ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+				ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 			}
 			Eventually(ctx, Object(lease)).Should(
 				HaveField("Annotations", HaveKeyWithValue("dhcp.metal.ironcore.dev/vendor", tc.vendor)),
@@ -751,7 +839,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(ctx, Object(lease)).Should(
 			HaveField("Annotations", Not(HaveKey("dhcp.metal.ironcore.dev/vendor"))),
@@ -1189,7 +1277,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(out).NotTo(BeNil())
 
 		// No DHCPLease after DISCOVER — applyLease must not have been called.
-		checkErr := crClient.Get(ctx, client.ObjectKey{Name: helper.NormalizeMAC(mac)}, &metaldhcpv1alpha1.DHCPLease{})
+		checkErr := crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(out.YourIPAddr)}, &metaldhcpv1alpha1.DHCPLease{})
 		Expect(apierrors.IsNotFound(checkErr)).To(BeTrue(), "no DHCPLease should exist after DISCOVER")
 
 		// REQUEST completes the handshake → lease written.
@@ -1198,7 +1286,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 
 		lease := &metaldhcpv1alpha1.DHCPLease{
-			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(mac)},
+			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
 			HaveField("Spec.MACAddress", mac.String()),
