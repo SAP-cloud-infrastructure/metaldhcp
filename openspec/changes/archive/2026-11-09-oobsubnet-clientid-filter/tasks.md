@@ -53,7 +53,7 @@
 ## 6. CRD regeneration and docs
 
 - [x] 6.1 Run `make check-gen` and commit any resulting changes (updated CRD YAML, generated deepcopy). Verify: `make check-gen` exits 0 with no diff.
-- [ ] 6.2 Run `make build-metaldhcp-remote` in `sapcc/helm-charts/system/` to regenerate `managedresources/crds.yaml`. Verify: `git diff` shows the new `clientIdList` and `clientId` fields in the CRD output.
+- [x] 6.2 Run `make build-metaldhcp-remote` in `sapcc/helm-charts/system/` to regenerate `managedresources/crds.yaml`. Verify: `git diff` shows the new `clientIdList` and `clientId` fields in the CRD output.
 
 ## 7. Integration check
 

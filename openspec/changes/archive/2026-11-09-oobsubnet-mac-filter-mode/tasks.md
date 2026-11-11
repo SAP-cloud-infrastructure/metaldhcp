@@ -30,7 +30,7 @@
 ## 6. Validation
 
 - [x] 6.1 `make test` and the codegen check (`make generate manifests fmt` leaves no diff) and `helm lint` pass.
-- [ ] 6.2 `make lint` passes (the golangci-lint CI gate).
+- [x] 6.2 `make lint` passes (the golangci-lint CI gate).
 
 ## Workflow follow-up
 
