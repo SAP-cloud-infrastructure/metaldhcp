@@ -383,7 +383,7 @@ def t_pool_nomatch():
 
 
 def t_lease_record():
-    print("==> DHCPLease — REQUEST for each MAC must create a DHCPLease CR")
+    print("==> DHCPLease — REQUEST for each MAC must create a DHCPLease CR named after the IP")
 
     def check_lease(label, mac, giaddr, expected_ip=None):
         ack = dhcp_request_relay(mac, giaddr)
@@ -395,8 +395,8 @@ def t_lease_record():
             fail(f"{label}: ACK yiaddr={ip} — expected {expected_ip}")
             return
         ok(f"{label}: ACK yiaddr={ip}")
-        lease_name = mac.replace(":", "")
-        r = kubectl("get", "dhcplease", lease_name, "-o", "jsonpath={.spec.ip}")
+        lease_name = ip.replace(".", "-")
+        r = kubectl("-n", NS, "get", "dhcplease", lease_name, "-o", "jsonpath={.spec.ip}")
         lease_ip = r.stdout.strip()
         if lease_ip == ip:
             ok(f"{label}: DHCPLease {lease_name} .spec.ip={lease_ip}")
@@ -512,6 +512,30 @@ def t_ipxe_nobooturl():
         ok("no option 67 for iPXE phase without a pool bootURL")
 
 
+def t_publish_static_leases():
+    print("==> publishStaticLeases — DHCPLease CRs must exist at startup for static entries")
+
+    def check_static_lease(label, lease_name, expected_mac="", expected_cid=""):
+        r = kubectl("-n", NS, "get", "dhcplease", lease_name, "-o",
+                    "jsonpath={.spec.macAddress},{.spec.clientID}", "--ignore-not-found")
+        out = r.stdout.strip()
+        if not out:
+            fail(f"{label}: DHCPLease {lease_name} not found")
+            return
+        parts = out.split(",")
+        got_mac = parts[0] if len(parts) > 0 else ""
+        got_cid = parts[1] if len(parts) > 1 else ""
+        if expected_mac and got_mac != expected_mac:
+            fail(f"{label}: DHCPLease {lease_name} macAddress={got_mac!r} — expected {expected_mac!r}")
+        elif expected_cid and got_cid != expected_cid:
+            fail(f"{label}: DHCPLease {lease_name} clientID={got_cid!r} — expected {expected_cid!r}")
+        else:
+            ok(f"{label}: DHCPLease {lease_name} present (mac={got_mac!r} cid={got_cid!r})")
+
+    check_static_lease("MAC static",      "192-168-100-200", expected_mac=LENOVO_MAC)
+    check_static_lease("clientId static", "192-168-100-201", expected_cid=CID_STATIC_CLIENT)
+
+
 # Ordered registry: name -> (description, function). "all" runs these in order.
 # Names are grouped by feature (feature or feature-detail) so a partial token like
 # "tftp", "pool", "static", "filter", "lease" or "ipxe" selects the whole group.
@@ -526,6 +550,7 @@ TESTS = {
     "static-cid":       ("clientId static lease returns its IP", t_static_cid),
     "lease-idempotent": ("Dell MAC re-lease returns the same IP", t_lease_idempotent),
     "lease-record":     ("REQUEST creates a DHCPLease CR per MAC", t_lease_record),
+    "publish-static":   ("publishStaticLeases creates CRs at startup without DHCP traffic", t_publish_static_leases),
     "options":          ("OFFER carries DNS, domain, NTP options", t_options),
     "tftp-fetch":       ("tftpd sidecar serves snponly.efi", t_tftp_fetch),
     "tftp-x64":         ("Vendor class Arch:00007 selects snponly.efi", t_tftp_x64),

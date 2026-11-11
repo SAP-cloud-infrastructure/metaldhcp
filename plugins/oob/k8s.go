@@ -144,6 +144,19 @@ func (k *K8sClient) bootstrapConfigSubnets(ctx context.Context, subnets []api.Su
 		if err := k.bootstrapSubnet(ctx, s, byCIDR[s.CIDR]); err != nil {
 			return err
 		}
+		if k.publishStaticLeases && len(s.StaticLeases) > 0 {
+			var mask net.IPMask
+			if _, cidr, err := net.ParseCIDR(s.CIDR); err == nil {
+				mask = cidr.Mask
+			}
+			var dns []net.IP
+			for _, srv := range s.DNSServers {
+				if ip := net.ParseIP(srv); ip != nil {
+					dns = append(dns, ip)
+				}
+			}
+			k.seedStaticLeases(ctx, s.StaticLeases, mask, s.Gateway, s.BootURL, dns, s.Domain)
+		}
 	}
 	return nil
 }
