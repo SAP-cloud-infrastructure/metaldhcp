@@ -78,4 +78,9 @@ type OOBConfig struct {
 	// be reclaimed for another client, parsed with time.ParseDuration. Empty uses
 	// DefaultReclaimGrace.
 	ReclaimGrace string `yaml:"reclaimGrace,omitempty"`
+
+	// PublishStaticLeases controls whether a DHCPLease CR is created for each static lease
+	// entry at seed time, without waiting for a DHCP packet. Useful when BMCs are statically
+	// configured and will never send DHCP requests but still need to be onboarded via MOO.
+	PublishStaticLeases bool `yaml:"publishStaticLeases,omitempty"`
 }

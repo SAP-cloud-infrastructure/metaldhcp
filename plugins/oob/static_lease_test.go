@@ -4,6 +4,7 @@
 package oob
 
 import (
+	"context"
 	"net"
 	"time"
 
@@ -27,7 +28,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 	Context("MAC-keyed static lease", func() {
 		It("returns the correct entry on MAC lookup", func() {
 			leases := []api.StaticLease{{MAC: "aa:bb:cc:dd:ee:01", IP: "10.0.0.1", Hostname: "host-a"}}
-			k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+			k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 			mac, err := net.ParseMAC("aa:bb:cc:dd:ee:01")
 			Expect(err).NotTo(HaveOccurred())
@@ -41,7 +42,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 
 		It("is not found by an unrelated clientId", func() {
 			leases := []api.StaticLease{{MAC: "aa:bb:cc:dd:ee:01", IP: "10.0.0.1"}}
-			k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+			k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 			_, ok := k.lookupStaticLease("", "ff010203")
 			Expect(ok).To(BeFalse())
@@ -51,7 +52,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 	Context("clientId-keyed static lease", func() {
 		It("returns the correct entry on clientId lookup", func() {
 			leases := []api.StaticLease{{ClientId: "ff0102aabb", IP: "10.0.0.2", Hostname: "host-b"}}
-			k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+			k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 			entry, ok := k.lookupStaticLease("", "ff0102aabb")
 			Expect(ok).To(BeTrue())
@@ -61,7 +62,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 
 		It("normalizes clientId to lowercase on seed and lookup", func() {
 			leases := []api.StaticLease{{ClientId: "FF0102AABB", IP: "10.0.0.3"}}
-			k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+			k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 			entry, ok := k.lookupStaticLease("", "ff0102aabb")
 			Expect(ok).To(BeTrue())
@@ -70,7 +71,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 
 		It("strips 0x prefix on seed", func() {
 			leases := []api.StaticLease{{ClientId: "0xff0102aabb", IP: "10.0.0.4"}}
-			k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+			k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 			entry, ok := k.lookupStaticLease("", "ff0102aabb")
 			Expect(ok).To(BeTrue())
@@ -79,7 +80,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 
 		It("is not found by an unrelated MAC", func() {
 			leases := []api.StaticLease{{ClientId: "ff0102aabb", IP: "10.0.0.2"}}
-			k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+			k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 			mac, err := net.ParseMAC("aa:bb:cc:dd:ee:01")
 			Expect(err).NotTo(HaveOccurred())
@@ -93,7 +94,7 @@ var _ = Describe("seedStaticLeases / lookupStaticLease", func() {
 			{MAC: "aa:bb:cc:dd:ee:01", IP: "10.0.0.10"},
 			{ClientId: "ff0102aabb", IP: "10.0.0.20"},
 		}
-		k.seedStaticLeases(leases, "10.0.0.254", "", nil, "")
+		k.seedStaticLeases(context.Background(), leases, nil, "10.0.0.254", "", nil, "")
 
 		mac, err := net.ParseMAC("aa:bb:cc:dd:ee:01")
 		Expect(err).NotTo(HaveOccurred())
