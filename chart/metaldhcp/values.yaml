@@ -66,6 +66,11 @@ oob:
   #     ip: 192.168.10.200
   #     hostname: bmc-static-01
 
+  # publishStaticLeases: when true, a DHCPLease CR is created for each static lease entry
+  # at startup without waiting for a DHCP request. Useful when BMCs are statically
+  # configured and will never send DHCP requests but still need to be onboarded via MOO.
+  # publishStaticLeases: false
+
   # dnsServers is sent as DHCP option 6. Required for clients to resolve boot-operator.
   dnsServers: []
   # - 147.204.9.200

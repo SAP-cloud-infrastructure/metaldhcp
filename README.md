@@ -114,6 +114,8 @@ staticLeases:
 
 Static leases always return the configured IP regardless of pool or relay hint. The hostname is recorded in the resulting `DHCPLease` CR.
 
+Set `publishStaticLeases: true` (under `oob:` in Helm values) to have metaldhcp create a `DHCPLease` CR for each static lease entry at startup, without waiting for a DHCP request. This is needed when BMCs are statically configured and will never send DHCP requests but still need to be discovered by metal-onboarding-operator.
+
 ## TFTP / PXE boot
 
 When `tftp.enabled` is set in the Helm values, a `tftpd` sidecar runs in the same Pod
