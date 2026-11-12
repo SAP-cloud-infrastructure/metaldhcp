@@ -213,14 +213,14 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 				macMatch := slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey })
 				cidMatch := clientID != "" && slices.Contains(pool.ClientIdList, normalizeClientID(clientID))
 				if !macMatch && !cidMatch {
-					log.Debugf("← DROP %s mac=%s: not in macList/clientIdList for subnet %s (allow)", req.MessageType(), mac, pool.CIDR)
+					log.Infof("← DROP %s mac=%s: not in macList/clientIdList for subnet %s (allow)", req.MessageType(), mac, pool.CIDR)
 					return nil, true
 				}
 			case "deny":
 				macMatch := slices.ContainsFunc(pool.MacList, func(m string) bool { return helper.NormalizeMACString(m) == macKey })
 				cidMatch := clientID != "" && slices.Contains(pool.ClientIdList, normalizeClientID(clientID))
 				if macMatch || cidMatch {
-					log.Debugf("← DROP %s mac=%s: in macList/clientIdList for subnet %s (deny)", req.MessageType(), mac, pool.CIDR)
+					log.Infof("← DROP %s mac=%s: in macList/clientIdList for subnet %s (deny)", req.MessageType(), mac, pool.CIDR)
 					return nil, true
 				}
 			}
