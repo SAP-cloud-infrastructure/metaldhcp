@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
 # SPDX-License-Identifier: Apache-2.0
+{{- if .Values.service.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -30,3 +31,4 @@ spec:
   type: LoadBalancer
   loadBalancerIP: {{ .Values.externalIP }}
   externalTrafficPolicy: Local
+{{- end }}
