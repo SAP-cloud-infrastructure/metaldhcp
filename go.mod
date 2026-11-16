@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/coredhcp/coredhcp v0.0.0-20260217182248-a0841cb3038f
 	github.com/endobit/oui v0.7.0
-	github.com/insomniacslk/dhcp v0.0.0-20260901064844-234b97448fae
+	github.com/insomniacslk/dhcp v0.0.0-20261014062924-c6bb46ad3f3a
 	github.com/onsi/ginkgo/v2 v2.27.4
 	github.com/onsi/gomega v1.39.0
 	github.com/pin/tftp/v3 v3.2.0
