@@ -5,7 +5,7 @@
 # dev/ipxe-stub/snponly.efi is a text stub served by tftpd for integration testing.
 # Use the production Dockerfile for a real signed snponly.efi.
 
-FROM --platform=$BUILDPLATFORM golang:1.26.3 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS builder
 
 ARG GOARCH=''
 
