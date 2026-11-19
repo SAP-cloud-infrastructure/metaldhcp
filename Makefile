@@ -50,8 +50,9 @@ generate: controller-gen goimports ## Generate DeepCopy methods.
 	$(GOIMPORTS) -w .
 
 .PHONY: manifests
-manifests: controller-gen ## Generate CRD manifests.
+manifests: controller-gen ## Generate CRD manifests and RBAC.
 	$(CONTROLLER_GEN) crd paths="./api/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=metaldhcp paths="./..." output:rbac:artifacts:config=chart/metaldhcp/rbac
 
 .PHONY: check-gen
 check-gen: generate manifests docs fmt ## Run code generation, manifests generation, and formatting checks.
