@@ -19,7 +19,7 @@ RUN make -j$(nproc) bin-x86_64-efi/snponly.efi \
     CERT=digicert-root-g2.pem,digicert-root-ca.pem \
     TRUST=digicert-root-g2.pem,digicert-root-ca.pem
 
-FROM --platform=$BUILDPLATFORM golang:1.26.3 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS builder
 
 ARG GOARCH=''
 
