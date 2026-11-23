@@ -7,14 +7,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DHCPLease records an IPv4 lease issued by metaldhcp. It is the durable allocation
+// Lease records an IPv4 lease issued by metaldhcp. It is the durable allocation
 // ledger (the oob plugin rebuilds its in-memory allocator from these on startup) and
 // the event that triggers the onboarding flow in the onboarding operator. metaldhcp
 // owns these objects; the object name is the normalized MAC (e.g. "3cecefaabbcc") so
 // re-leases patch the same object.
 //
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Cluster,shortName=dl
 // +kubebuilder:printcolumn:name="MAC",type=string,JSONPath=`.spec.macAddress`
 // +kubebuilder:printcolumn:name="ClientID",type=string,JSONPath=`.spec.clientID`,priority=1
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.spec.ip`
@@ -25,14 +25,14 @@ import (
 // +kubebuilder:printcolumn:name="Vendor",type=string,JSONPath=`.metadata.annotations['dhcp\.metal\.ironcore\.dev/vendor']`,priority=1
 // +kubebuilder:selectablefield:JSONPath=`.spec.macAddress`
 // +kubebuilder:selectablefield:JSONPath=`.spec.ip`
-type DHCPLease struct {
+type Lease struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec DHCPLeaseSpec `json:"spec,omitempty"`
+	Spec LeaseSpec `json:"spec,omitempty"`
 }
 
-type DHCPLeaseSpec struct {
+type LeaseSpec struct {
 	// +kubebuilder:validation:Required
 	MACAddress string `json:"macAddress"`
 
@@ -62,8 +62,8 @@ type DHCPLeaseSpec struct {
 
 // +kubebuilder:object:root=true
 
-type DHCPLeaseList struct {
+type LeaseList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []DHCPLease `json:"items"`
+	Items           []Lease `json:"items"`
 }

@@ -9,10 +9,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func oobSubnet(cidr string, leases ...StaticLease) *OOBSubnet {
-	return &OOBSubnet{
+func oobSubnet(cidr string, leases ...StaticLease) *Subnet {
+	return &Subnet{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
-		Spec:       OOBSubnetSpec{CIDR: cidr, StaticLeases: leases},
+		Spec:       SubnetSpec{CIDR: cidr, StaticLeases: leases},
 	}
 }
 

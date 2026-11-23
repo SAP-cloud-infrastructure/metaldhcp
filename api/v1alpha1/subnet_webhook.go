@@ -13,22 +13,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// ValidateCreate validates a new OOBSubnet.
-func (s *OOBSubnet) ValidateCreate() (admission.Warnings, error) {
+// ValidateCreate validates a new Subnet.
+func (s *Subnet) ValidateCreate() (admission.Warnings, error) {
 	return nil, s.validate()
 }
 
-// ValidateUpdate validates an updated OOBSubnet.
-func (s *OOBSubnet) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
+// ValidateUpdate validates an updated Subnet.
+func (s *Subnet) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 	return nil, s.validate()
 }
 
 // ValidateDelete is a no-op; deletions are always permitted.
-func (s *OOBSubnet) ValidateDelete() (admission.Warnings, error) {
+func (s *Subnet) ValidateDelete() (admission.Warnings, error) {
 	return nil, nil
 }
 
-func (s *OOBSubnet) validate() error {
+func (s *Subnet) validate() error {
 	if err := s.validateFilterMode(); err != nil {
 		return err
 	}
@@ -37,7 +37,7 @@ func (s *OOBSubnet) validate() error {
 
 // validateFilterMode rejects a macList set together with allowAll, where it would be
 // silently ignored — this also catches a populated list left on the allowAll default.
-func (s *OOBSubnet) validateFilterMode() error {
+func (s *Subnet) validateFilterMode() error {
 	if s.Spec.Mode == "allowAll" && len(s.Spec.MacList) > 0 {
 		return field.Invalid(field.NewPath("spec", "macList"), s.Spec.MacList,
 			"macList must be empty when mode is allowAll; use allow or deny")
@@ -45,7 +45,7 @@ func (s *OOBSubnet) validateFilterMode() error {
 	return nil
 }
 
-func (s *OOBSubnet) validateStaticLeases() error {
+func (s *Subnet) validateStaticLeases() error {
 	if len(s.Spec.StaticLeases) == 0 {
 		return nil
 	}

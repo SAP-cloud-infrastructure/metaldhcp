@@ -8,18 +8,18 @@
 
 
 ### Resource Types
-- [DHCPLease](#dhcplease)
-- [DHCPLeaseList](#dhcpleaselist)
-- [OOBSubnet](#oobsubnet)
-- [OOBSubnetList](#oobsubnetlist)
+- [Lease](#lease)
+- [LeaseList](#leaselist)
+- [Subnet](#subnet)
+- [SubnetList](#subnetlist)
 
 
 
-#### DHCPLease
+#### Lease
 
 
 
-DHCPLease records an IPv4 lease issued by metaldhcp. It is the durable allocation
+Lease records an IPv4 lease issued by metaldhcp. It is the durable allocation
 ledger (the oob plugin rebuilds its in-memory allocator from these on startup) and
 the event that triggers the onboarding flow in the onboarding operator. metaldhcp
 owns these objects; the object name is the normalized MAC (e.g. "3cecefaabbcc") so
@@ -28,19 +28,19 @@ re-leases patch the same object.
 
 
 _Appears in:_
-- [DHCPLeaseList](#dhcpleaselist)
+- [LeaseList](#leaselist)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `dhcp.metal.ironcore.dev/v1alpha1` | | |
-| `kind` _string_ | `DHCPLease` | | |
+| `kind` _string_ | `Lease` | | |
 | `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  | Optional: \{\} <br /> |
 | `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  | Optional: \{\} <br /> |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[DHCPLeaseSpec](#dhcpleasespec)_ |  |  |  |
+| `spec` _[LeaseSpec](#leasespec)_ |  |  |  |
 
 
-#### DHCPLeaseList
+#### LeaseList
 
 
 
@@ -53,14 +53,14 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `dhcp.metal.ironcore.dev/v1alpha1` | | |
-| `kind` _string_ | `DHCPLeaseList` | | |
+| `kind` _string_ | `LeaseList` | | |
 | `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  | Optional: \{\} <br /> |
 | `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  | Optional: \{\} <br /> |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[DHCPLease](#dhcplease) array_ |  |  |  |
+| `items` _[Lease](#lease) array_ |  |  |  |
 
 
-#### DHCPLeaseSpec
+#### LeaseSpec
 
 
 
@@ -69,7 +69,7 @@ _Appears in:_
 
 
 _Appears in:_
-- [DHCPLease](#dhcplease)
+- [Lease](#lease)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -83,30 +83,50 @@ _Appears in:_
 | `leaseExpiresAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#time-v1-meta)_ | LeaseExpiresAt is the absolute time at which this lease expires (now + leaseTime at<br />the moment the offer was sent). Updated on every re-lease. |  |  |
 
 
-#### OOBSubnet
+#### StaticLease
 
 
 
-OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. Each
+StaticLease pins a client to a fixed IP within the subnet, bypassing dynamic allocation.
+Exactly one of MAC or ClientId must be set; the admission webhook enforces this.
+
+
+
+_Appears in:_
+- [SubnetSpec](#subnetspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mac` _string_ | MAC is the hardware address of the client, e.g. "00:11:22:33:44:55".<br />Mutually exclusive with ClientId. |  | Pattern: `^([0-9a-fA-F]\{2\}:)\{5\}[0-9a-fA-F]\{2\}$` <br /> |
+| `clientId` _string_ | ClientId is the DHCP client identifier (option 61) as a lowercase hex string.<br />Mutually exclusive with MAC. |  |  |
+| `ip` _string_ | IP is the fixed IPv4 address to offer to this client. |  | Format: ipv4 <br />Required: \{\} <br /> |
+| `hostname` _string_ | Hostname is the optional hostname to include in the DHCP offer (option 12). |  |  |
+
+
+#### Subnet
+
+
+
+Subnet defines an IPv4 pool for out-of-band / BMC management ports. Each
 instance selects subnets by label, allocates addresses from them, and optionally
 filters by MAC allowlist or delays offers to let other instances respond first.
 
 
 
 _Appears in:_
-- [OOBSubnetList](#oobsubnetlist)
+- [SubnetList](#subnetlist)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `dhcp.metal.ironcore.dev/v1alpha1` | | |
-| `kind` _string_ | `OOBSubnet` | | |
+| `kind` _string_ | `Subnet` | | |
 | `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  | Optional: \{\} <br /> |
 | `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  | Optional: \{\} <br /> |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[OOBSubnetSpec](#oobsubnetspec)_ |  |  |  |
+| `spec` _[SubnetSpec](#subnetspec)_ |  |  |  |
 
 
-#### OOBSubnetList
+#### SubnetList
 
 
 
@@ -119,14 +139,14 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `dhcp.metal.ironcore.dev/v1alpha1` | | |
-| `kind` _string_ | `OOBSubnetList` | | |
+| `kind` _string_ | `SubnetList` | | |
 | `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  | Optional: \{\} <br /> |
 | `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  | Optional: \{\} <br /> |
 | `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `items` _[OOBSubnet](#oobsubnet) array_ |  |  |  |
+| `items` _[Subnet](#subnet) array_ |  |  |  |
 
 
-#### OOBSubnetSpec
+#### SubnetSpec
 
 
 
@@ -135,7 +155,7 @@ _Appears in:_
 
 
 _Appears in:_
-- [OOBSubnet](#oobsubnet)
+- [Subnet](#subnet)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -152,25 +172,5 @@ _Appears in:_
 | `macList` _string array_ | MacList is the MAC set the filter mode operates on. Entries may be colon-, dash-, or<br />separator-free, any case; they are normalized before matching. Ignored when Mode is<br />allowAll. |  | Optional: \{\} <br /> |
 | `clientIdList` _string array_ | ClientIdList is the DHCP client-identifier set (option 61) the filter mode operates on.<br />Entries are lowercase hex strings. A client is matched when its MAC is in MacList OR its<br />client ID is in ClientIdList. Ignored when Mode is allowAll. |  | Optional: \{\} <br /> |
 | `responseDelay` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30/#duration-v1-meta)_ | ResponseDelay, when non-zero, delays the DHCP offer by the given duration.<br />Use on catch-all / fallback instances so that instances with a tighter filter<br />can win the race on shared BMC subnets. |  | Optional: \{\} <br /> |
-
-
-#### StaticLease
-
-
-
-StaticLease pins a client to a fixed IP within the subnet, bypassing dynamic allocation.
-Exactly one of MAC or ClientId must be set; the admission webhook enforces this.
-
-
-
-_Appears in:_
-- [OOBSubnetSpec](#oobsubnetspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `mac` _string_ | MAC is the hardware address of the client, e.g. "00:11:22:33:44:55".<br />Mutually exclusive with ClientId. |  | Pattern: `^([0-9a-fA-F]\{2\}:)\{5\}[0-9a-fA-F]\{2\}$` <br /> |
-| `clientId` _string_ | ClientId is the DHCP client identifier (option 61) as a lowercase hex string.<br />Mutually exclusive with MAC. |  |  |
-| `ip` _string_ | IP is the fixed IPv4 address to offer to this client. |  | Format: ipv4 <br />Required: \{\} <br /> |
-| `hostname` _string_ | Hostname is the optional hostname to include in the DHCP offer (option 12). |  |  |
 
 

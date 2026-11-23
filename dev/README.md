@@ -2,11 +2,11 @@
 
 A local [kind](https://kind.sigs.k8s.io/) + [Tilt](https://tilt.dev/) setup that runs
 **metaldhcp** against a kind cluster so you can trigger DHCP leases and inspect the resulting
-`DHCPLease` CRs.
+`Lease` CRs.
 
 ```
 udhcpc / scapy (debug sidecar) --IPv4 DISCOVER--> metaldhcp :67
-    metaldhcp oob plugin: allocate IP from the config pool, write DHCPLease CR
+    metaldhcp oob plugin: allocate IP from the config pool, write Lease CR
 ```
 
 ## Prerequisites
@@ -36,7 +36,7 @@ kubectl exec -it -n metaldhcp-system deploy/metaldhcp -c debug -- bash
 # from inside: full DHCP exchange
 udhcpc -i veth0 -n -q
 
-# send a hostname with the request (recorded in DHCPLease.spec.hostname)
+# send a hostname with the request (recorded in Lease.spec.hostname)
 udhcpc -i veth0 -n -q -x hostname:node-direct
 
 # watch the wire while doing it
@@ -68,10 +68,10 @@ This sends: a direct udhcpc request, two scapy packets with `giaddr` set (one pe
 a static-lease request, an unmatched relay (expects a `NoPoolFound` Warning event), a
 raw TFTP fetch of `snponly.efi` from the tftpd sidecar, and a DISCOVER that asserts
 option 54 (server identifier) equals the LoadBalancer VIP. It prints the resulting
-`DHCPLease` table after the DHCP scenarios.
+`Lease` table after the DHCP scenarios.
 
 The scapy scenarios use OUIs from real server vendors (Dell, HPE, Lenovo) so the
-`VENDOR` column is populated in `kubectl get dhcpleases -o wide`. The MAC prefixes are
+`VENDOR` column is populated in `kubectl get leases -o wide`. The MAC prefixes are
 defined as variables at the top of the script; change `DELL_PREFIX` / `HPE_PREFIX` /
 `LENOVO_PREFIX` to use different OUI prefixes without touching the scenario logic.
 
@@ -89,7 +89,7 @@ regardless of relay or pool hint.
 
 ```sh
 # watch leases appear (name = normalized MAC)
-kubectl get dhcpleases -n metaldhcp-system -w
+kubectl get dl -n metaldhcp-system -w
 
 # metaldhcp allocating + recording
 kubectl logs -n metaldhcp-system deploy/metaldhcp -c metaldhcp
@@ -106,7 +106,7 @@ make kind-delete     # delete the kind cluster and registry
 
 - The exact `dhcping` flags vary by build; the goal is simply an IPv4 DISCOVER to `:67`. If
   `dhcping` isn't cooperative, any IPv4 DHCP DISCOVER against the pod works (e.g. `nmap --script
-broadcast-dhcp-discover`), or create an `OOBSubnet`/edit `dev/values.yaml`.
+broadcast-dhcp-discover`), or create a `Subnet`/edit `dev/values.yaml`.
 - metaldhcp runs as root with `NET_RAW`/`NET_BIND_SERVICE` here — dev convenience, not a
   production posture.
 - The pool, lease time, and server-id live in `dev/values.yaml` (rendered into the chart's

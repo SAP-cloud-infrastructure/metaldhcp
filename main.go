@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: SAP SE or an SAP affiliate company and IronCore contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// +kubebuilder:rbac:groups=dhcp.metal.ironcore.dev,resources=oobsubnets,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=dhcp.metal.ironcore.dev,resources=dhcpleases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=dhcp.metal.ironcore.dev,resources=subnets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=dhcp.metal.ironcore.dev,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 
 package main
@@ -60,7 +60,7 @@ func main() {
 	flag.BoolVar(&listPlugins, "list-plugins", false, "list plugins")
 	flag.StringVar(&logLevel, "loglevel", "info", "log level (debug, info, warning, error, fatal, panic)")
 	flag.StringVar(&healthAddr, "health-addr", ":8080", "address for the /healthz HTTP endpoint")
-	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "enable the OOBSubnet validating webhook server")
+	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "enable the Subnet validating webhook server")
 	flag.StringVar(&webhookAddr, "webhook-addr", ":9443", "address for the webhook HTTPS endpoint")
 	flag.StringVar(&webhookCert, "webhook-cert", "", "path to TLS certificate file for the webhook server")
 	flag.StringVar(&webhookKey, "webhook-key", "", "path to TLS key file for the webhook server")
@@ -118,7 +118,7 @@ func main() {
 	if webhookEnabled {
 		go func() {
 			mux := http.NewServeMux()
-			mux.HandleFunc("/validate-oobsubnet", webhookHandler)
+			mux.HandleFunc("/validate-subnet", webhookHandler)
 			if err := http.ListenAndServeTLS(webhookAddr, webhookCert, webhookKey, mux); err != nil {
 				log.Fatalf("Webhook server error: %v", err)
 			}
@@ -153,7 +153,7 @@ func shouldSetupKubeClient(cfg *config.Config) bool {
 // setupEventRecorder creates a Kubernetes event recorder backed by the live API and wires
 // it into the oob plugin. POD_NAME and POD_NAMESPACE must be set via the Downward API.
 // The recorder uses in-cluster config so events land on the a-cluster where the pod runs,
-// not on the remote m-cluster kubeconfig used for DHCPLease/OOBSubnet operations.
+// not on the remote m-cluster kubeconfig used for Lease/Subnet operations.
 func setupEventRecorder() {
 	podName := os.Getenv("POD_NAME")
 	podNamespace := os.Getenv("POD_NAMESPACE")

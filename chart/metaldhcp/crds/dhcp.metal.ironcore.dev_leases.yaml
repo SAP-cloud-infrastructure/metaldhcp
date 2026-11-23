@@ -4,14 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: dhcpleases.dhcp.metal.ironcore.dev
+  name: leases.dhcp.metal.ironcore.dev
 spec:
   group: dhcp.metal.ironcore.dev
   names:
-    kind: DHCPLease
-    listKind: DHCPLeaseList
-    plural: dhcpleases
-    singular: dhcplease
+    kind: Lease
+    listKind: LeaseList
+    plural: leases
+    shortNames:
+    - dl
+    singular: lease
   scope: Cluster
   versions:
   - additionalPrinterColumns:
@@ -46,7 +48,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          DHCPLease records an IPv4 lease issued by metaldhcp. It is the durable allocation
+          Lease records an IPv4 lease issued by metaldhcp. It is the durable allocation
           ledger (the oob plugin rebuilds its in-memory allocator from these on startup) and
           the event that triggers the onboarding flow in the onboarding operator. metaldhcp
           owns these objects; the object name is the normalized MAC (e.g. "3cecefaabbcc") so

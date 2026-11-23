@@ -14,13 +14,16 @@ def image_ref(name):
     return "%s/%s" % (reg_host, name)
 
 # --- CRDs (owned by metaldhcp) --------------------------------------------------
+# Remove legacy CRD names from before the OOBSubnet→Subnet / DHCPLease→Lease rename.
+local("kubectl delete crd dhcpleases.dhcp.metal.ironcore.dev oobsubnets.dhcp.metal.ironcore.dev --ignore-not-found", quiet=True)
+
 # CRDs are included via --include-crds in the helm() call below.
 # Naming them here enables resource_deps ordering on "crds".
 k8s_resource(
     new_name="crds",
     objects=[
-        "oobsubnets.dhcp.metal.ironcore.dev:customresourcedefinition",
-        "dhcpleases.dhcp.metal.ironcore.dev:customresourcedefinition",
+        "subnets.dhcp.metal.ironcore.dev:customresourcedefinition",
+        "leases.dhcp.metal.ironcore.dev:customresourcedefinition",
     ],
 )
 

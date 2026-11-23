@@ -19,10 +19,10 @@ var (
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(GroupVersion,
-		&OOBSubnet{},
-		&OOBSubnetList{},
-		&DHCPLease{},
-		&DHCPLeaseList{},
+		&Subnet{},
+		&SubnetList{},
+		&Lease{},
+		&LeaseList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil

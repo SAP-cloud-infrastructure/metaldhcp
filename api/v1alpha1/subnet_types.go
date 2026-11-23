@@ -7,19 +7,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// OOBSubnet defines an IPv4 pool for out-of-band / BMC management ports. Each
+// Subnet defines an IPv4 pool for out-of-band / BMC management ports. Each
 // instance selects subnets by label, allocates addresses from them, and optionally
 // filters by MAC allowlist or delays offers to let other instances respond first.
 //
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Cluster,shortName=sn
 // +kubebuilder:printcolumn:name="CIDR",type=string,JSONPath=`.spec.cidr`
 // +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=`.spec.gateway`,priority=1
-type OOBSubnet struct {
+type Subnet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec OOBSubnetSpec `json:"spec,omitempty"`
+	Spec SubnetSpec `json:"spec,omitempty"`
 }
 
 // StaticLease pins a client to a fixed IP within the subnet, bypassing dynamic allocation.
@@ -43,7 +43,7 @@ type StaticLease struct {
 	Hostname string `json:"hostname,omitempty"`
 }
 
-type OOBSubnetSpec struct {
+type SubnetSpec struct {
 	// CIDR is the IPv4 network from which addresses are allocated, e.g. "10.0.1.0/24".
 	// +kubebuilder:validation:Required
 	CIDR string `json:"cidr"`
@@ -103,8 +103,8 @@ type OOBSubnetSpec struct {
 
 // +kubebuilder:object:root=true
 
-type OOBSubnetList struct {
+type SubnetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []OOBSubnet `json:"items"`
+	Items           []Subnet `json:"items"`
 }

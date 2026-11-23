@@ -8,14 +8,14 @@ The `oob` plugin handles IPv4 address allocation (DHCPv4 `server4`) and lease pe
 
 - **Address pools** come from two sources (mutually exclusive):
   - *Inline subnets* — defined in the plugin config file (`subnets:`), managed by the deployment pipeline or Helm. When present, these are authoritative.
-  - *OOBSubnet CRs* — selected by label (`subnetLabels:`), synced into the cluster by a separate operator. Used when no inline subnets are configured.
+  - *Subnet CRs* — selected by label (`subnetLabels:`), synced into the cluster by a separate operator. Used when no inline subnets are configured.
 - **DHCP relay (giaddr)** — when a request arrives via a relay agent (non-zero `giaddr`), the plugin uses `giaddr` for pool selection. Exact-IP assignment within the pool still uses `clientIP`/`requestedIP`.
 - **Per-pool boot URL** — each pool can declare a `bootURL`. When set, the server returns it as DHCP option 67 (`BootFileName`) for UEFI HTTP boot or iPXE chain-loading.
 - **Static leases** — `staticLeases:` in the config binds a MAC address to a fixed IP and optional hostname, bypassing pool allocation entirely.
-- For each successful allocation the plugin writes a `DHCPLease` CR, recording the MAC-to-IP binding, lease expiry, and hostname.
-- **MAC vendor lookup** — the server resolves the IEEE OUI prefix of each client MAC to a vendor name (e.g. "Dell", "Hewlett Packard Enterprise", "Lenovo") using an embedded ~500 KB OUI database. The vendor is logged on every DISCOVER, included in Kubernetes Warning events, and stored in the `dhcp.metal.ironcore.dev/vendor` annotation on the `DHCPLease` CR. Visible as the `VENDOR` column in `kubectl get dhcpleases -o wide`.
+- For each successful allocation the plugin writes a `Lease` CR, recording the MAC-to-IP binding, lease expiry, and hostname.
+- **MAC vendor lookup** — the server resolves the IEEE OUI prefix of each client MAC to a vendor name (e.g. "Dell", "Hewlett Packard Enterprise", "Lenovo") using an embedded ~500 KB OUI database. The vendor is logged on every DISCOVER, included in Kubernetes Warning events, and stored in the `dhcp.metal.ironcore.dev/vendor` annotation on the `Lease` CR. Visible as the `VENDOR` column in `kubectl get leases -o wide`.
 
-The in-process allocator is seeded from existing `DHCPLease` CRs on startup, so no external IPAM backend is required.
+The in-process allocator is seeded from existing `Lease` CRs on startup, so no external IPAM backend is required.
 
 ## CRDs
 
@@ -23,8 +23,8 @@ Both resources belong to API group `dhcp.metal.ironcore.dev`, version `v1alpha1`
 
 | Kind | Description |
 |------|-------------|
-| `OOBSubnet` | Represents an address pool (CIDR, range, gateway, lease time, optional bootURL). |
-| `DHCPLease` | Records an active MAC-to-IP binding (MAC, hostname, IP, gateway, lease time, client ID, optional vendor). Created by the oob plugin; `kubectl get dhcpleases -o wide` shows the `VENDOR` column. |
+| `Subnet` | Represents an address pool (CIDR, range, gateway, lease time, optional bootURL). |
+| `Lease` | Records an active MAC-to-IP binding (MAC, hostname, IP, gateway, lease time, client ID, optional vendor). Created by the oob plugin; `kubectl get leases -o wide` shows the `VENDOR` column. |
 
 CRD manifests are in `config/crd/bases/`.
 
@@ -37,7 +37,7 @@ The following prerequisites are needed to build, run, or develop metaldhcp:
 - **Kubernetes cluster** — a running cluster (v1.26+) with CRDs installed is required when the `oob` plugin is active; either a kubeconfig or an in-cluster service account must be available
 - **Capabilities** — `CAP_NET_BIND_SERVICE` and `CAP_NET_RAW` to bind UDP port 67; in the container image these are granted via `setcap` at build time
 - **Docker** (or compatible container runtime) for building and running the container image; the `Dockerfile` and `Dockerfile.dev` are provided at the root
-- **kubectl** — to install CRDs (`config/crd/bases/`) and inspect `OOBSubnet` / `DHCPLease` objects
+- **kubectl** — to install CRDs (`config/crd/bases/`) and inspect `Subnet` / `Lease` objects
 - **Helm 3** — to deploy via the `chart/metaldhcp/` Helm chart
 - **make** — to drive the build, code-generation, and test targets (see the `Build` section)
 - **controller-gen** and **envtest** — fetched automatically by `make generate` / `make test` via the `hack/` scripts
@@ -88,12 +88,12 @@ A kubeconfig or in-cluster service account is required when the `oob` plugin is 
 ```yaml
 # example/oob.yaml
 
-# OOBSubnet CR label selector — used when subnets: is empty
+# Subnet CR label selector — used when subnets: is empty
 subnetLabels:
   - key: dhcp
     value: "true"
 
-# Inline pool definitions — when non-empty, these take precedence over OOBSubnet CRs
+# Inline pool definitions — when non-empty, these take precedence over Subnet CRs
 subnets:
   - cidr: 192.168.10.0/24
     gateway: 192.168.10.1
@@ -112,9 +112,9 @@ staticLeases:
     hostname: bmc-static-01
 ```
 
-Static leases always return the configured IP regardless of pool or relay hint. The hostname is recorded in the resulting `DHCPLease` CR.
+Static leases always return the configured IP regardless of pool or relay hint. The hostname is recorded in the resulting `Lease` CR.
 
-Set `publishStaticLeases: true` (under `oob:` in Helm values) to have metaldhcp create a `DHCPLease` CR for each static lease entry at startup, without waiting for a DHCP request. This is needed when BMCs are statically configured and will never send DHCP requests but still need to be discovered by metal-onboarding-operator.
+Set `publishStaticLeases: true` (under `oob:` in Helm values) to have metaldhcp create a `Lease` CR for each static lease entry at startup, without waiting for a DHCP request. This is needed when BMCs are statically configured and will never send DHCP requests but still need to be discovered by metal-onboarding-operator.
 
 ## TFTP / PXE boot
 
@@ -136,9 +136,9 @@ LoadBalancer IP. This is a deployment prerequisite and is not enforced by the ch
 
 ## Downstream
 
-A separate metal-onboarding-operator watches `DHCPLease` objects and drives the server onboarding workflow. metaldhcp itself has no onboarding logic.
+A separate metal-onboarding-operator watches `Lease` objects and drives the server onboarding workflow. metaldhcp itself has no onboarding logic.
 
-The `Hostname` field in `DHCPLease` (populated from static lease config or DHCP option 12) is available for downstream consumers such as DNS registration.
+The `Hostname` field in `Lease` (populated from static lease config or DHCP option 12) is available for downstream consumers such as DNS registration.
 
 ## Dev environment
 

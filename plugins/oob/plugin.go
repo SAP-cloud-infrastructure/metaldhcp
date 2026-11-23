@@ -31,7 +31,7 @@ var log = logger.GetLogger("plugins/oob")
 var vendorLookup bool
 
 // EnableVendorLookup switches on MAC-to-vendor lookup for log lines, events, and
-// DHCPLease annotations. Uses ~500 KB of embedded OUI data; off by default.
+// Lease annotations. Uses ~500 KB of embedded OUI data; off by default.
 func EnableVendorLookup() { vendorLookup = true }
 
 // vendorTag returns " (vendor)" when v is non-empty, "" otherwise.
@@ -289,11 +289,11 @@ func (k *K8sClient) handler4(req, resp *dhcpv4.DHCPv4) (*dhcpv4.DHCPv4, bool) {
 	if req.MessageType() == dhcpv4.MessageTypeRequest {
 		if isStaticLease {
 			if err := k.applyStaticLease(ctx, mac, clientID, leaseIP, subnetMask, gateway, hostname); err != nil {
-				log.Errorf("Failed to record static DHCPLease for MAC %s: %s", mac, err)
+				log.Errorf("Failed to record static Lease for MAC %s: %s", mac, err)
 			}
 		} else {
 			if err := k.applyLease(ctx, mac, leaseIP, subnetMask, gateway, clientID, hostname, vendor, leaseTime); err != nil {
-				log.Errorf("Failed to record DHCPLease for MAC %s: %s", mac, err)
+				log.Errorf("Failed to record Lease for MAC %s: %s", mac, err)
 			}
 		}
 	}

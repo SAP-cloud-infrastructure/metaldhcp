@@ -36,13 +36,13 @@ _failed = 0
 
 def ok(msg):
     global _passed
-    print(f"    PASS: {msg}")
+    print(f"\033[32m    PASS: {msg}\033[0m")
     _passed += 1
 
 
 def fail(msg):
     global _failed
-    print(f"    FAIL: {msg}", file=sys.stderr)
+    print(f"\033[31m    FAIL: {msg}\033[0m", file=sys.stderr)
     _failed += 1
 
 
@@ -287,8 +287,8 @@ def setup_routing():
 
 def print_leases():
     print()
-    print("==> DHCPLeases:")
-    print(kubectl("-n", NS, "get", "dhcpleases.dhcp.metal.ironcore.dev").stdout or "(none)")
+    print("==> Leases:")
+    print(kubectl("-n", NS, "get", "leases.dhcp.metal.ironcore.dev").stdout or "(none)")
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +383,7 @@ def t_pool_nomatch():
 
 
 def t_lease_record():
-    print("==> DHCPLease — REQUEST for each MAC must create a DHCPLease CR named after the IP")
+    print("==> Lease — REQUEST for each MAC must create a Lease CR named after the IP")
 
     def check_lease(label, mac, giaddr, expected_ip=None):
         ack = dhcp_request_relay(mac, giaddr)
@@ -396,12 +396,12 @@ def t_lease_record():
             return
         ok(f"{label}: ACK yiaddr={ip}")
         lease_name = ip.replace(".", "-")
-        r = kubectl("-n", NS, "get", "dhcplease", lease_name, "-o", "jsonpath={.spec.ip}")
+        r = kubectl("-n", NS, "get", "dl", lease_name, "-o", "jsonpath={.spec.ip}")
         lease_ip = r.stdout.strip()
         if lease_ip == ip:
-            ok(f"{label}: DHCPLease {lease_name} .spec.ip={lease_ip}")
+            ok(f"{label}: Lease {lease_name} .spec.ip={lease_ip}")
         else:
-            fail(f"{label}: DHCPLease {lease_name} not found or ip mismatch"
+            fail(f"{label}: Lease {lease_name} not found or ip mismatch"
                  f" (got '{lease_ip}', expected '{ip}')")
 
     check_lease("Dell",   DELL_MAC,   GIADDR_A)
@@ -513,24 +513,24 @@ def t_ipxe_nobooturl():
 
 
 def t_publish_static_leases():
-    print("==> publishStaticLeases — DHCPLease CRs must exist at startup for static entries")
+    print("==> publishStaticLeases — Lease CRs must exist at startup for static entries")
 
     def check_static_lease(label, lease_name, expected_mac="", expected_cid=""):
-        r = kubectl("-n", NS, "get", "dhcplease", lease_name, "-o",
+        r = kubectl("-n", NS, "get", "dl", lease_name, "-o",
                     "jsonpath={.spec.macAddress},{.spec.clientID}", "--ignore-not-found")
         out = r.stdout.strip()
         if not out:
-            fail(f"{label}: DHCPLease {lease_name} not found")
+            fail(f"{label}: Lease {lease_name} not found")
             return
         parts = out.split(",")
         got_mac = parts[0] if len(parts) > 0 else ""
         got_cid = parts[1] if len(parts) > 1 else ""
         if expected_mac and got_mac != expected_mac:
-            fail(f"{label}: DHCPLease {lease_name} macAddress={got_mac!r} — expected {expected_mac!r}")
+            fail(f"{label}: Lease {lease_name} macAddress={got_mac!r} — expected {expected_mac!r}")
         elif expected_cid and got_cid != expected_cid:
-            fail(f"{label}: DHCPLease {lease_name} clientID={got_cid!r} — expected {expected_cid!r}")
+            fail(f"{label}: Lease {lease_name} clientID={got_cid!r} — expected {expected_cid!r}")
         else:
-            ok(f"{label}: DHCPLease {lease_name} present (mac={got_mac!r} cid={got_cid!r})")
+            ok(f"{label}: Lease {lease_name} present (mac={got_mac!r} cid={got_cid!r})")
 
     check_static_lease("MAC static",      "192-168-100-200", expected_mac=LENOVO_MAC)
     check_static_lease("clientId static", "192-168-100-201", expected_cid=CID_STATIC_CLIENT)
@@ -549,7 +549,7 @@ TESTS = {
     "static-mac":       ("MAC static lease returns its IP", t_static_mac),
     "static-cid":       ("clientId static lease returns its IP", t_static_cid),
     "lease-idempotent": ("Dell MAC re-lease returns the same IP", t_lease_idempotent),
-    "lease-record":     ("REQUEST creates a DHCPLease CR per MAC", t_lease_record),
+    "lease-record":     ("REQUEST creates a Lease CR per MAC", t_lease_record),
     "publish-static":   ("publishStaticLeases creates CRs at startup without DHCP traffic", t_publish_static_leases),
     "options":          ("OFFER carries DNS, domain, NTP options", t_options),
     "tftp-fetch":       ("tftpd sidecar serves snponly.efi", t_tftp_fetch),
@@ -635,7 +635,10 @@ def main():
 
     print_leases()
     print()
-    print(f"==> Results: {_passed} passed, {_failed} failed")
+    if _failed == 0:
+        print(f"\033[32m==> Results: {_passed} passed, {_failed} failed\033[0m")
+    else:
+        print(f"\033[31m==> Results: {_passed} passed, {_failed} failed\033[0m")
     sys.exit(0 if _failed == 0 else 1)
 
 
