@@ -12,7 +12,7 @@ networkInit:
     repository: ghcr.io/sap-cloud-infrastructure/metaldhcp-network-init
     tag: ""  # defaults to Chart.appVersion
 
-# Namespace where metaldhcp runs and where DHCPLease objects are written.
+# Namespace where metaldhcp runs and where Lease objects are written.
 namespace: metaldhcp-system
 
 # createNamespace controls whether the Namespace resource is included in the chart.
@@ -42,15 +42,15 @@ server:
 
 # oob plugin configuration — maps directly to the oob.yaml config file.
 oob:
-  # namespace where DHCPLease CRs are written and OOBSubnet CRs are read from.
+  # namespace where Lease CRs are written and Subnet CRs are read from.
   # Defaults to the release namespace when empty.
   namespace: ""
-  # subnetLabels selects OOBSubnet CRs as pools. Ignored when subnets is non-empty.
+  # subnetLabels selects Subnet CRs as pools. Ignored when subnets is non-empty.
   subnetLabels: []
   # - key: dhcp
   #   value: "true"
 
-  # subnets defines pools inline. When non-empty, takes precedence over OOBSubnet CRs.
+  # subnets defines pools inline. When non-empty, takes precedence over Subnet CRs.
   subnets: []
   # - cidr: 192.168.10.0/24
   #   gateway: 192.168.10.1
@@ -72,7 +72,7 @@ oob:
   #     ip: 192.168.10.200
   #     hostname: bmc-static-01
 
-  # publishStaticLeases: when true, a DHCPLease CR is created for each static lease entry
+  # publishStaticLeases: when true, a Lease CR is created for each static lease entry
   # at startup without waiting for a DHCP request. Useful when BMCs are statically
   # configured and will never send DHCP requests but still need to be onboarded via MOO.
   # publishStaticLeases: false
@@ -161,7 +161,7 @@ tftp:
   # - url: https://boot-operator.runtime.qa-de-1/ipxe-arm64.efi
   #   filename: ipxe-arm64.efi
 
-# webhook configures the OOBSubnet validating admission webhook.
+# webhook configures the Subnet validating admission webhook.
 webhook:
   enabled: false
   # port is the HTTPS port the webhook server listens on inside the pod.

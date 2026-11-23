@@ -12,7 +12,7 @@ metadata:
     cert-manager.io/inject-ca-from: {{ include "metaldhcp.namespace" . }}/{{ include "metaldhcp.fullname" . }}-webhook
   {{- end }}
 webhooks:
-  - name: oobsubnet.dhcp.metal.ironcore.dev
+  - name: subnet.dhcp.metal.ironcore.dev
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Ignore
@@ -20,11 +20,11 @@ webhooks:
       - apiGroups: ["dhcp.metal.ironcore.dev"]
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["oobsubnets"]
+        resources: ["subnets"]
     clientConfig:
       service:
         name: {{ include "metaldhcp.fullname" . }}
         namespace: {{ include "metaldhcp.namespace" . }}
         port: {{ .Values.webhook.port }}
-        path: /validate-oobsubnet
+        path: /validate-subnet
 {{- end }}

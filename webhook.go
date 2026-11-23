@@ -32,9 +32,9 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subnet := &metaldhcpv1alpha1.OOBSubnet{}
+	subnet := &metaldhcpv1alpha1.Subnet{}
 	if err := json.Unmarshal(review.Request.Object.Raw, subnet); err != nil {
-		writeResponse(w, review.Request.UID, false, fmt.Sprintf("failed to decode OOBSubnet: %v", err))
+		writeResponse(w, review.Request.UID, false, fmt.Sprintf("failed to decode Subnet: %v", err))
 		return
 	}
 

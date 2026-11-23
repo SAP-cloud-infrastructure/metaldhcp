@@ -36,7 +36,7 @@ const (
 )
 
 // buildPlugin writes cfg to a temp config file, runs setup4, and returns the handler.
-// For each Subnet in cfg a DeferCleanup is registered to delete the bootstrapped OOBSubnet CR.
+// For each Subnet in cfg a DeferCleanup is registered to delete the bootstrapped Subnet CR.
 func buildPlugin(cfg api.OOBConfig) handler.Handler4 {
 	data, err := yaml.Marshal(cfg)
 	Expect(err).NotTo(HaveOccurred())
@@ -48,7 +48,7 @@ func buildPlugin(cfg api.OOBConfig) handler.Handler4 {
 	for _, s := range cfg.Subnets {
 		name := cidrToCRName(s.CIDR)
 		DeferCleanup(func(ctx SpecContext) {
-			cr := &metaldhcpv1alpha1.OOBSubnet{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			cr := &metaldhcpv1alpha1.Subnet{ObjectMeta: metav1.ObjectMeta{Name: name}}
 			_ = crClient.Delete(ctx, cr)
 		})
 	}
@@ -112,12 +112,12 @@ func discoverIPXE(mac net.HardwareAddr, giaddr net.IP) (*dhcpv4.DHCPv4, *dhcpv4.
 	return req, resp
 }
 
-// deferDeleteLease schedules deletion of any DHCPLease whose MACAddress matches mac.
+// deferDeleteLease schedules deletion of any Lease whose MACAddress matches mac.
 // Uses a list scan rather than a name lookup so IP-based naming doesn't require knowing
 // the allocated IP at cleanup-registration time.
 func deferDeleteLease(mac net.HardwareAddr) {
 	DeferCleanup(func(ctx SpecContext) {
-		list := &metaldhcpv1alpha1.DHCPLeaseList{}
+		list := &metaldhcpv1alpha1.LeaseList{}
 		if err := crClient.List(ctx, list); err != nil {
 			return
 		}
@@ -130,7 +130,7 @@ func deferDeleteLease(mac net.HardwareAddr) {
 }
 
 var _ = Describe("OOB plugin handler4", func() {
-	It("allocates from a config-defined pool and records a DHCPLease", func(ctx SpecContext) {
+	It("allocates from a config-defined pool and records a Lease", func(ctx SpecContext) {
 		const cidr = "192.168.42.0/24"
 
 		h := buildPlugin(api.OOBConfig{
@@ -152,7 +152,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 		Expect(outR).NotTo(BeNil())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
@@ -161,15 +161,15 @@ var _ = Describe("OOB plugin handler4", func() {
 		))
 	})
 
-	It("allocates from a labeled OOBSubnet CR and records a DHCPLease", func(ctx SpecContext) {
+	It("allocates from a labeled Subnet CR and records a Lease", func(ctx SpecContext) {
 		const cidr = "192.168.43.0/24"
 
-		subnet := &metaldhcpv1alpha1.OOBSubnet{
+		subnet := &metaldhcpv1alpha1.Subnet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "subnet-a",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "192.168.43.1"},
+			Spec: metaldhcpv1alpha1.SubnetSpec{CIDR: cidr, Gateway: "192.168.43.1"},
 		}
 		Expect(crClient.Create(ctx, subnet)).To(Succeed())
 		DeferCleanup(crClient.Delete, subnet)
@@ -193,7 +193,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 		Expect(outR).NotTo(BeNil())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
@@ -202,7 +202,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		))
 	})
 
-	It("drops first when no OOBSubnet CR exists, then allocates after the CR is created", func(ctx SpecContext) {
+	It("drops first when no Subnet CR exists, then allocates after the CR is created", func(ctx SpecContext) {
 		const cidr = "172.16.10.0/24"
 
 		h := buildPlugin(api.OOBConfig{
@@ -215,14 +215,14 @@ var _ = Describe("OOB plugin handler4", func() {
 		req, resp := discoverRelay(mac, net.ParseIP("172.16.10.1"))
 		out, drop := h(req, resp)
 		Expect(out).To(BeNil())
-		Expect(drop).To(BeTrue(), "request must be dropped before the OOBSubnet CR exists")
+		Expect(drop).To(BeTrue(), "request must be dropped before the Subnet CR exists")
 
-		subnet := &metaldhcpv1alpha1.OOBSubnet{
+		subnet := &metaldhcpv1alpha1.Subnet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "subnet-hot-add",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{CIDR: cidr, Gateway: "172.16.10.1"},
+			Spec: metaldhcpv1alpha1.SubnetSpec{CIDR: cidr, Gateway: "172.16.10.1"},
 		}
 		Expect(crClient.Create(ctx, subnet)).To(Succeed())
 		DeferCleanup(crClient.Delete, subnet)
@@ -230,24 +230,24 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		req2, resp2 := discoverRelay(mac, net.ParseIP("172.16.10.1"))
 		out2, drop2 := h(req2, resp2)
-		Expect(drop2).To(BeFalse(), "request must succeed after the OOBSubnet CR is created")
+		Expect(drop2).To(BeFalse(), "request must succeed after the Subnet CR is created")
 		Expect(out2).NotTo(BeNil())
 		Expect(contains(cidr, out2.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must be within %s", out2.YourIPAddr, cidr)
 	})
 
-	It("allocates the reserved IP from an OOBSubnet CR static lease for the matching MAC", func(ctx SpecContext) {
+	It("allocates the reserved IP from an Subnet CR static lease for the matching MAC", func(ctx SpecContext) {
 		const (
 			cidr     = "172.16.11.0/24"
 			staticIP = "172.16.11.55"
 			staticHN = "bmc-cr-node001"
 		)
 
-		subnet := &metaldhcpv1alpha1.OOBSubnet{
+		subnet := &metaldhcpv1alpha1.Subnet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "subnet-cr-static",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+			Spec: metaldhcpv1alpha1.SubnetSpec{
 				CIDR:    cidr,
 				Gateway: "172.16.11.1",
 				StaticLeases: []metaldhcpv1alpha1.StaticLease{
@@ -277,7 +277,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 		Expect(outR).NotTo(BeNil())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(ctx, Object(lease)).Should(SatisfyAll(
@@ -292,12 +292,12 @@ var _ = Describe("OOB plugin handler4", func() {
 			staticIP = "172.16.12.77"
 		)
 
-		subnet := &metaldhcpv1alpha1.OOBSubnet{
+		subnet := &metaldhcpv1alpha1.Subnet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "subnet-cr-static-isolation",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+			Spec: metaldhcpv1alpha1.SubnetSpec{
 				CIDR:    cidr,
 				Gateway: "172.16.12.1",
 				StaticLeases: []metaldhcpv1alpha1.StaticLease{
@@ -324,7 +324,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(contains(cidr, out.YourIPAddr)).To(BeTrue(), "YourIPAddr %s must still be within %s", out.YourIPAddr, cidr)
 	})
 
-	It("returns the same IP on re-lease and patches the single DHCPLease", func(ctx SpecContext) {
+	It("returns the same IP on re-lease and patches the single Lease", func(ctx SpecContext) {
 		const cidr = "192.168.44.0/24"
 
 		h := buildPlugin(api.OOBConfig{
@@ -346,7 +346,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR1).To(BeFalse())
 		Expect(outR1).NotTo(BeNil())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out1.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(HaveField("Spec.IP", firstIP))
@@ -361,7 +361,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		_, dropR2 := h(reqR2, respR2)
 		Expect(dropR2).To(BeFalse())
 
-		list := &metaldhcpv1alpha1.DHCPLeaseList{}
+		list := &metaldhcpv1alpha1.LeaseList{}
 		Eventually(ObjectList(list)).Should(HaveField("Items", HaveLen(1)))
 	})
 
@@ -396,7 +396,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 		Expect(outR).NotTo(BeNil())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(
@@ -490,7 +490,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// One-CR-per-IP: A's stale lease is deleted, only B's remains for that address.
 		Eventually(func(g Gomega) {
-			list := &metaldhcpv1alpha1.DHCPLeaseList{}
+			list := &metaldhcpv1alpha1.LeaseList{}
 			g.Expect(crClient.List(ctx, list)).To(Succeed())
 			g.Expect(list.Items).To(HaveLen(1))
 			g.Expect(list.Items[0].Spec.MACAddress).To(Equal(macB.String()))
@@ -500,7 +500,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 	It("allows client2 to acquire client1's deleted IP after server restart; client1 then gets a new IP", func(ctx SpecContext) {
 		// Demonstrates the full "delete lease → client2 gets freed IP → client1 gets new IP"
-		// flow. Deleting the DHCPLease CR (step 3) simulates what deleteLeaseByIP does during
+		// flow. Deleting the Lease CR (step 3) simulates what deleteLeaseByIP does during
 		// expiry-based reclaim. A server restart re-seeds from surviving CRs so the deleted
 		// IP is treated as free on the next request.
 		const (
@@ -538,7 +538,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropRA).To(BeFalse())
 
 		// Wait for the CR to be written, then delete it ("delete lease").
-		leaseA := &metaldhcpv1alpha1.DHCPLease{ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(outA.YourIPAddr)}}
+		leaseA := &metaldhcpv1alpha1.Lease{ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(outA.YourIPAddr)}}
 		Eventually(ctx, Object(leaseA)).Should(HaveField("Spec.MACAddress", macA.String()))
 		Expect(crClient.Delete(ctx, leaseA)).To(Succeed())
 
@@ -569,17 +569,17 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// Final CR state: IP A → client2, IP B → client1; names are IP-based.
 		Eventually(func(g Gomega) {
-			lA := &metaldhcpv1alpha1.DHCPLease{}
+			lA := &metaldhcpv1alpha1.Lease{}
 			g.Expect(crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(net.ParseIP(ipA))}, lA)).To(Succeed())
 			g.Expect(lA.Spec.MACAddress).To(Equal(macB.String()))
 
-			lB := &metaldhcpv1alpha1.DHCPLease{}
+			lB := &metaldhcpv1alpha1.Lease{}
 			g.Expect(crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(net.ParseIP(ipB))}, lB)).To(Succeed())
 			g.Expect(lB.Spec.MACAddress).To(Equal(macA.String()))
 		}).Should(Succeed())
 	})
 
-	It("drops a duplicate-IP DHCPLease on startup, keeping the live one", func(ctx SpecContext) {
+	It("drops a duplicate-IP Lease on startup, keeping the live one", func(ctx SpecContext) {
 		const dupIP = "10.44.98.10"
 		macA, err := net.ParseMAC(dellMAC)
 		Expect(err).NotTo(HaveOccurred())
@@ -591,13 +591,13 @@ var _ = Describe("OOB plugin handler4", func() {
 		// Two leases claim the same IP: A expired long ago, B is live.
 		past := metav1.NewTime(time.Now().Add(-time.Hour))
 		future := metav1.NewTime(time.Now().Add(time.Hour))
-		expired := &metaldhcpv1alpha1.DHCPLease{
+		expired := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(macA)},
-			Spec:       metaldhcpv1alpha1.DHCPLeaseSpec{MACAddress: macA.String(), IP: dupIP, LeaseExpiresAt: &past},
+			Spec:       metaldhcpv1alpha1.LeaseSpec{MACAddress: macA.String(), IP: dupIP, LeaseExpiresAt: &past},
 		}
-		live := &metaldhcpv1alpha1.DHCPLease{
+		live := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: helper.NormalizeMAC(macB)},
-			Spec:       metaldhcpv1alpha1.DHCPLeaseSpec{MACAddress: macB.String(), IP: dupIP, LeaseExpiresAt: &future},
+			Spec:       metaldhcpv1alpha1.LeaseSpec{MACAddress: macB.String(), IP: dupIP, LeaseExpiresAt: &future},
 		}
 		Expect(crClient.Create(ctx, expired)).To(Succeed())
 		Expect(crClient.Create(ctx, live)).To(Succeed())
@@ -609,7 +609,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 		// The expired duplicate is deleted; the live lease is kept.
 		Eventually(func(g Gomega) {
-			err := crClient.Get(ctx, client.ObjectKeyFromObject(expired), &metaldhcpv1alpha1.DHCPLease{})
+			err := crClient.Get(ctx, client.ObjectKeyFromObject(expired), &metaldhcpv1alpha1.Lease{})
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expired duplicate should be deleted")
 		}).Should(Succeed())
 		Eventually(Object(live)).Should(HaveField("Spec.IP", dupIP))
@@ -721,8 +721,8 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(dropR).To(BeFalse())
 		Expect(outR).NotTo(BeNil())
 
-		// DHCPLease should record the hostname
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		// Lease should record the hostname
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(ctx, Object(lease)).Should(SatisfyAll(
@@ -776,7 +776,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		)))
 	})
 
-	It("stores vendor annotation on DHCPLease when vendor-lookup is enabled", func(ctx SpecContext) {
+	It("stores vendor annotation on Lease when vendor-lookup is enabled", func(ctx SpecContext) {
 		const cidr = "10.10.10.0/24"
 
 		vendorLookup = true
@@ -807,7 +807,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			_, dropR := h(reqR, respR)
 			Expect(dropR).To(BeFalse(), "mac=%s", tc.mac)
 
-			lease := &metaldhcpv1alpha1.DHCPLease{
+			lease := &metaldhcpv1alpha1.Lease{
 				ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 			}
 			Eventually(ctx, Object(lease)).Should(
@@ -838,7 +838,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		_, dropR := h(reqR, respR)
 		Expect(dropR).To(BeFalse())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(ctx, Object(lease)).Should(
@@ -1006,7 +1006,7 @@ var _ = Describe("OOB plugin handler4", func() {
 
 	// --- oobsubnet-mac-filter integration tests ---
 
-	It("bootstraps a managed-by-helm OOBSubnet CR from a config subnet at startup", func(ctx SpecContext) {
+	It("bootstraps a managed-by-helm Subnet CR from a config subnet at startup", func(ctx SpecContext) {
 		const cidr = "10.60.0.0/24"
 
 		buildPlugin(api.OOBConfig{
@@ -1014,7 +1014,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		})
 
 		crName := cidrToCRName(cidr)
-		cr := &metaldhcpv1alpha1.OOBSubnet{}
+		cr := &metaldhcpv1alpha1.Subnet{}
 		Expect(crClient.Get(ctx, client.ObjectKey{Name: crName}, cr)).To(Succeed())
 		Expect(cr.Spec.CIDR).To(Equal(cidr))
 		Expect(cr.Spec.BootURL).To(Equal("https://boot.example.com"))
@@ -1029,7 +1029,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		})
 
 		crName := cidrToCRName(cidr)
-		cr := &metaldhcpv1alpha1.OOBSubnet{}
+		cr := &metaldhcpv1alpha1.Subnet{}
 		Expect(crClient.Get(ctx, client.ObjectKey{Name: crName}, cr)).To(Succeed())
 		Expect(cr.Spec.BootURL).To(BeEmpty())
 
@@ -1042,12 +1042,12 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(cr.Spec.BootURL).To(Equal("https://updated-boot.example.com"))
 	})
 
-	It("leaves an externally-managed OOBSubnet CR unchanged when same CIDR is in config", func(ctx SpecContext) {
+	It("leaves an externally-managed Subnet CR unchanged when same CIDR is in config", func(ctx SpecContext) {
 		const cidr = "10.62.0.0/24"
 
-		externalCR := &metaldhcpv1alpha1.OOBSubnet{
+		externalCR := &metaldhcpv1alpha1.Subnet{
 			ObjectMeta: metav1.ObjectMeta{Name: "external-cr-10-62"},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+			Spec: metaldhcpv1alpha1.SubnetSpec{
 				CIDR:    cidr,
 				Gateway: "10.62.0.1",
 				BootURL: "https://external-boot.example.com",
@@ -1061,7 +1061,7 @@ var _ = Describe("OOB plugin handler4", func() {
 			Subnets: []api.Subnet{{CIDR: cidr, Gateway: "10.62.0.1", BootURL: "https://other-boot.example.com"}},
 		})
 
-		cr := &metaldhcpv1alpha1.OOBSubnet{}
+		cr := &metaldhcpv1alpha1.Subnet{}
 		Expect(crClient.Get(ctx, client.ObjectKey{Name: "external-cr-10-62"}, cr)).To(Succeed())
 		Expect(cr.Spec.BootURL).To(Equal("https://external-boot.example.com"), "external CR must not be modified")
 	})
@@ -1111,16 +1111,16 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(contains("10.52.0.0/24", out.YourIPAddr)).To(BeTrue())
 	})
 
-	It("serves DHCP request when OOBSubnet CR allowMacs uses colon-formatted MAC", func(ctx SpecContext) {
+	It("serves DHCP request when Subnet CR allowMacs uses colon-formatted MAC", func(ctx SpecContext) {
 		hpeMACParsed, err := net.ParseMAC(hpeMAC)
 		Expect(err).NotTo(HaveOccurred())
 
-		subnet := &metaldhcpv1alpha1.OOBSubnet{
+		subnet := &metaldhcpv1alpha1.Subnet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "subnet-colon-mac",
 				Labels: map[string]string{"oob": "true"},
 			},
-			Spec: metaldhcpv1alpha1.OOBSubnetSpec{
+			Spec: metaldhcpv1alpha1.SubnetSpec{
 				CIDR:    "10.58.0.0/24",
 				Gateway: "10.58.0.1",
 				Mode:    "allow",
@@ -1259,7 +1259,7 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(drop).To(BeTrue())
 	})
 
-	It("does not write DHCPLease on DISCOVER; writes it only after REQUEST", func(ctx SpecContext) {
+	It("does not write Lease on DISCOVER; writes it only after REQUEST", func(ctx SpecContext) {
 		const cidr = "192.168.99.0/24"
 
 		h := buildPlugin(api.OOBConfig{
@@ -1276,16 +1276,16 @@ var _ = Describe("OOB plugin handler4", func() {
 		Expect(drop).To(BeFalse())
 		Expect(out).NotTo(BeNil())
 
-		// No DHCPLease after DISCOVER — applyLease must not have been called.
-		checkErr := crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(out.YourIPAddr)}, &metaldhcpv1alpha1.DHCPLease{})
-		Expect(apierrors.IsNotFound(checkErr)).To(BeTrue(), "no DHCPLease should exist after DISCOVER")
+		// No Lease after DISCOVER — applyLease must not have been called.
+		checkErr := crClient.Get(ctx, client.ObjectKey{Name: leaseObjectName(out.YourIPAddr)}, &metaldhcpv1alpha1.Lease{})
+		Expect(apierrors.IsNotFound(checkErr)).To(BeTrue(), "no Lease should exist after DISCOVER")
 
 		// REQUEST completes the handshake → lease written.
 		reqR, respR := requestRelay(mac, giaddr, out.YourIPAddr)
 		_, dropR := h(reqR, respR)
 		Expect(dropR).To(BeFalse())
 
-		lease := &metaldhcpv1alpha1.DHCPLease{
+		lease := &metaldhcpv1alpha1.Lease{
 			ObjectMeta: metav1.ObjectMeta{Name: leaseObjectName(out.YourIPAddr)},
 		}
 		Eventually(Object(lease)).Should(SatisfyAll(

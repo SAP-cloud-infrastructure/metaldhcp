@@ -25,8 +25,8 @@ SPDX-License-Identifier = "MIT"
 
 [[annotations]]
 path = [
-  "config/crd/bases/dhcp.metal.ironcore.dev_dhcpleases.yaml",
-  "config/crd/bases/dhcp.metal.ironcore.dev_oobsubnets.yaml",
+  "config/crd/bases/dhcp.metal.ironcore.dev_leases.yaml",
+  "config/crd/bases/dhcp.metal.ironcore.dev_subnets.yaml",
 ]
 SPDX-FileCopyrightText = "SAP SE or an SAP affiliate company and IronCore contributors"
 SPDX-License-Identifier = "MIT"
