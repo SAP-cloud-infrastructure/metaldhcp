@@ -68,6 +68,7 @@ type K8sClient struct {
 	ntpServers          []net.IP
 	tftpFiles           []api.TFTPFile
 	publishStaticLeases bool
+	resyncInterval      time.Duration
 }
 
 func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
@@ -79,6 +80,14 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 			log.Warningf("Ignoring invalid reclaimGrace %q: %v", cfg.ReclaimGrace, err)
 		}
 	}
+	resyncInterval := 5 * time.Minute
+	if cfg.ResyncInterval != "" {
+		if d, err := time.ParseDuration(cfg.ResyncInterval); err == nil {
+			resyncInterval = d
+		} else {
+			log.Warningf("Ignoring invalid resyncInterval %q: %v", cfg.ResyncInterval, err)
+		}
+	}
 	k := &K8sClient{
 		Client:              kubernetes.GetClient(),
 		SubnetLabels:        cfg.SubnetLabels,
@@ -87,6 +96,7 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 		domain:              cfg.Domain,
 		tftpFiles:           cfg.TFTPFiles,
 		publishStaticLeases: cfg.PublishStaticLeases,
+		resyncInterval:      resyncInterval,
 	}
 	if cfg.ServerIP != "" {
 		if ip := net.ParseIP(cfg.ServerIP); ip != nil {
@@ -110,6 +120,22 @@ func NewK8sClient(ctx context.Context, cfg *api.OOBConfig) (*K8sClient, error) {
 	}
 	if err := k.seedFromLeases(ctx); err != nil {
 		return nil, fmt.Errorf("failed to seed allocator from Leases: %w", err)
+	}
+	if k.resyncInterval > 0 {
+		go func() {
+			ticker := time.NewTicker(k.resyncInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if _, err := k.oobSubnetPools(ctx); err != nil {
+						log.Warningf("Periodic subnet resync failed: %v", err)
+					}
+				}
+			}
+		}()
 	}
 	return k, nil
 }

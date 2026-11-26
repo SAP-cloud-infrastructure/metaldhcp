@@ -1,8 +1,11 @@
 # subnetLabels selects OOBSubnet CRs to use as address pools.
+# Leave empty (the default) to select all Subnet CRs in the namespace.
 # Ignored when subnets is non-empty (see below).
-subnetLabels:
-  - key: dhcp
-    value: "true"
+subnetLabels: []
+
+# resyncInterval controls how often all Subnet CRs are re-read to publish Lease CRs
+# for static entries that appeared after startup. Default: 5m. Set to "0" to disable.
+resyncInterval: "5m"
 
 # subnets defines pools inline (e.g. set via Helm values / deployment pipeline).
 # When non-empty, subnets take precedence and OOBSubnet CRs are not consulted.

@@ -83,4 +83,10 @@ type OOBConfig struct {
 	// entry at seed time, without waiting for a DHCP packet. Useful when BMCs are statically
 	// configured and will never send DHCP requests but still need to be onboarded via MOO.
 	PublishStaticLeases bool `yaml:"publishStaticLeases,omitempty"`
+
+	// ResyncInterval is how often the server re-reads all Subnet CRs to publish Lease CRs for
+	// static entries not yet recorded (covers new Subnet CRs and updated static lease lists).
+	// Parsed with time.ParseDuration. "0" or empty disables periodic resync.
+	// Default when unset: 5m.
+	ResyncInterval string `yaml:"resyncInterval,omitempty"`
 }
