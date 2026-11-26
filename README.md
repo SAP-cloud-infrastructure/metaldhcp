@@ -88,10 +88,9 @@ A kubeconfig or in-cluster service account is required when the `oob` plugin is 
 ```yaml
 # example/oob.yaml
 
-# Subnet CR label selector — used when subnets: is empty
-subnetLabels:
-  - key: dhcp
-    value: "true"
+# Subnet CR label selector — only Subnet CRs carrying ALL listed labels are used as pools.
+# Leave empty (the default) to select all Subnet CRs in the namespace.
+subnetLabels: []
 
 # Inline pool definitions — when non-empty, these take precedence over Subnet CRs
 subnets:
@@ -115,6 +114,8 @@ staticLeases:
 Static leases always return the configured IP regardless of pool or relay hint. The hostname is recorded in the resulting `Lease` CR.
 
 Set `publishStaticLeases: true` (under `oob:` in Helm values) to have metaldhcp create a `Lease` CR for each static lease entry at startup, without waiting for a DHCP request. This is needed when BMCs are statically configured and will never send DHCP requests but still need to be discovered by metal-onboarding-operator.
+
+By default metaldhcp also re-reads all Subnet CRs every 5 minutes (`resyncInterval: 5m`) so that Lease CRs are published for static entries in Subnet CRs that were created or updated after startup — without requiring DHCP traffic or a restart. Set `resyncInterval: "0"` to disable.
 
 ## TFTP / PXE boot
 
